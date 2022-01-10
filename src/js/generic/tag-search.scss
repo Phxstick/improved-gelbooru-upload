@@ -1,0 +1,21 @@
+// .tag-search {
+//   max-height: 110px;
+//   overflow: auto;
+// }
+
+.tag-search.focus {
+  z-index: 100;  // Dropdown should be above following widgets
+}
+
+.results.visible.above {
+  top: auto !important;
+  bottom: 100% !important;
+  display: flex !important;
+  margin-bottom: 0.5em;
+  flex-direction: column-reverse;
+
+  .result {
+    border-top: 1px solid rgba(101, 95, 86, 0.1) !important;
+    border-bottom: none !important;
+  }
+}

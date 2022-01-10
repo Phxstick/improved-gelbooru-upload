@@ -1,0 +1,84 @@
+$artist-color: rgb(170, 0, 0);
+$character-color: rgb(0, 150, 0);
+$copyright-color: rgb(170, 0, 170);
+$metadata-color: #e7640d;  // Slightly darker than original for better readability
+
+// Color search completions according to tag type
+.ui.fluid.search > .results .result {
+  &[data-type="tag"] .title {
+    color: #2d6da3;  // #337ab7;
+  }
+  &[data-type="artist"] .title {
+    color: $artist-color;
+  }
+  &[data-type="character"] .title {
+    color: $character-color;
+  }
+  &[data-type="copyright"] .title {
+    color: $copyright-color;
+  }
+  &[data-type="metadata"] .title {
+    color: $metadata-color;
+  }
+
+  &.rare {
+    opacity: 0.4;
+  }
+}
+
+// Color tags according to type
+a.ui.label {
+  &[data-type="artist"] {
+    background-color: rgba($artist-color, 0.1);
+    color: $artist-color;
+    &:hover {
+      background-color: rgba($artist-color, 0.15);
+      color: darken($artist-color, 3%);
+    }
+    &.active {
+      background-color: rgba($artist-color, 0.2);
+      color: darken($artist-color, 5%);
+    }
+  }
+  &[data-type="character"] {
+    background-color: rgba($character-color, 0.1);
+    color: darken($character-color, 5%);
+    &:hover {
+      background-color: rgba($character-color, 0.15);
+      color: darken($character-color, 8%);
+    }
+    &.active {
+      background-color: rgba($character-color, 0.2);
+      color: darken($character-color, 10%);
+    }
+  }
+  &[data-type="copyright"] {
+    background-color: rgba($copyright-color, 0.1);
+    color: darken($copyright-color, 5%);
+    &:hover {
+      background-color: rgba($copyright-color, 0.15);
+      color: darken($copyright-color, 8%);
+    }
+    &.active {
+      background-color: rgba($copyright-color, 0.20);
+      color: darken($copyright-color, 10%);
+    }
+  }
+  &[data-type="metadata"] {
+    background-color: rgba($metadata-color,0.1);
+    color: darken($metadata-color, 2%);
+    &:hover {
+      background-color: rgba($metadata-color, 0.15);
+      color: darken($metadata-color, 8%);
+    }
+    &.active {
+      background-color: rgba($metadata-color, 0.2);
+      color: darken($metadata-color, 10%);
+    }
+  }
+}
+
+.ui.multiple.dropdown > .label.rare {
+  box-shadow: 0 0 0 1px red inset;
+  color: red;
+}

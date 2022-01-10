@@ -1,0 +1,99 @@
+.file-input-label {
+  display: block;
+  cursor: pointer;
+
+  &.placeholder {
+    color: dimgrey;
+  }
+  &.dragover {
+    background-color: lavender;
+    border-color: mediumpurple;
+    box-shadow: 0 0 5px -1px mediumpurple;
+  }
+}
+
+img.preview {
+  object-fit: contain;
+
+  &.small {
+    max-height: 300px;
+    max-width: 300px;
+    margin-top: 10px;
+    outline: 1px solid mediumpurple;
+  }
+  &.large {
+    max-height: 100vh;
+    max-width: 55%;
+    margin-right: 10px;
+    margin-left: 10px;
+    align-self: center;
+    display: none;
+  }
+}
+
+.image-info {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.image-checks {
+  margin-top: 20px;
+  margin-left: 20px;
+  margin-bottom: 5px;
+  margin-right: 0;
+  font-size: 1.2rem;
+  overflow-x: hidden;
+}
+
+.hash-matches-wrapper {
+  display: flex;
+  flex-direction: row;
+}
+
+.hash-matches > a {
+  margin-left: 12px;
+}
+
+.source-matches-wrapper, .iqdb-matches-wrapper{
+  margin-top: 12px;
+}
+
+.source-matches, .iqdb-matches {
+  white-space: nowrap;
+  margin-top: 10px;
+  max-width: 565px;
+  // Add small padding so that outline of children is visible
+  padding: 1px;
+}
+
+.source-matches {
+  // Only show first few posts if there are many,
+  // user can visit Gelbooru search page to see all posts
+  padding-right: 10px;
+  overflow: hidden;
+  position: relative;
+  &::after {
+    position: absolute;
+    content: "";
+    width: 10px;
+    right: 0px;
+    bottom: 0px;
+    top: 0px;
+    background: linear-gradient(to left, white, 60%, transparent);
+  }
+}
+
+.iqdb-matches {
+  // Make sure that user can see all IQDB matches
+  overflow: auto;
+}
+
+.search-iqdb-button {
+  margin-top: 11px;
+  width: unset;
+}
+
+.no-file-error-message {
+  margin-top: 6px;
+}

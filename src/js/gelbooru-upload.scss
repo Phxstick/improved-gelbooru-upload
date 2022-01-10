@@ -1,0 +1,267 @@
+
+// ============================================================================
+//  Basic classes
+// ============================================================================
+
+.hidden {
+  display: none !important;
+}
+
+.success {
+  color: seagreen;
+}
+
+.failure {
+  color: crimson;
+}
+
+.info {
+  color: mediumvioletred;
+}
+
+.main-row {
+  > input {
+    width: -webkit-fill-available;
+  }
+  .row-title {
+    margin-top: 10px;
+    margin-bottom: 3px;
+  }
+}
+
+.styled-input {
+  padding: 7px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+
+  // Bring size in line with UI dropdowns
+  line-height: 22px;
+
+  // Make padding look even on all sides (font has internal padding)
+  padding-left: 10px;
+  padding-right: 10px;
+
+  &:not(:disabled):hover {
+    border-color: rgba(34, 36, 38, 0.35);  // Same as the Semantic UI tag inputs
+  }
+}
+
+.styled-button {
+  -webkit-appearance: none;
+  min-width: 105px;
+  padding: 7px 15px;
+  border-radius: 4px;
+  background-color: #0773fb;
+  border: none;
+  color: white;
+  font-weight: bold;
+
+  &:hover:not(:disabled) {
+    background-color: blue;
+  }
+  &:disabled {
+    opacity: 0.4;
+  }
+  &:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+.gelbooru-post {
+  display: inline-block;
+
+  &:not(:last-child) {
+    margin-right: 12px;
+  }
+
+  img {
+    outline: 1px solid mediumpurple;
+    max-width: 175px;
+    max-height: 175px;
+    object-fit: contain;
+  }
+}
+
+.ui.popup.warning {
+  border-color: red;
+  background-color: #fff0f0;
+  color: darkred;
+
+  &::before {
+    box-shadow: red 1px 1px 0px 0px;
+    background: #fff0f0 !important;
+  }
+}
+
+input:focus {
+  outline: none !important;
+}
+
+// ============================================================================
+//  Semantic UI customizations
+// ============================================================================
+
+.ui.selection.dropdown {
+  min-height: unset; // Default height of dropdown input is larger than needed
+  border: 1px solid #e0e0e0;  // Same as .styled-input
+}
+
+.ui.label {
+  font-weight: normal;
+  color: rgba(0,0,0,.72);
+
+  > .delete.icon {
+    font-size: 1rem;
+  }
+}
+
+.ui.ui.multiple.dropdown {
+  // Lots of wasted space here in Semantic UI, set right padding equal to left
+  padding-right: 5px;
+}
+
+.ui.multiple.dropdown > .label {
+  font-size: 1.1rem;
+  padding-top: 3.5px;
+  padding-bottom: 5px;
+}
+
+.ui.fluid.dropdown {
+  width: unset !important;
+}
+
+// X-icons waste too much space, one can delete using backspace/del instead
+.label:not(.rare) i.icon.delete {
+  display: none;
+}
+
+// Search results have too much padding, tone it down a bit
+.ui.fluid.search > .results .result {
+  padding-bottom: 0.357143em;
+  padding-top: .55714286em;
+  padding-left: 0.74285714em;
+  padding-right: 0.74285714em;
+
+  .title {
+    font-weight: normal;
+  }
+}
+
+// Manually style inline radiobuttons, no need to import form.css
+.ui.form > .inline.grouped.fields {
+  display: flex;
+  flex-direction: row;
+
+  label {
+    margin-right: 16px;
+  }
+  .ui.radio.checkbox label {
+    padding-left: 22px;
+  }
+}
+
+// Following dimensions make the dot in radiobuttons properly centered
+// (Semantic UI has it in .ui.checkbox, but not in .ui.radio.checkbox)
+.ui.radio.checkbox label:after {
+  width: 17px;
+  height: 17px;
+}
+
+// Importing fonts in content scripts is quite a hassle, it doesn't work
+// with the import statements in the Semantic UI files, so I manually
+// import a font with a few custom icon glyphs in the main script
+i.icon {
+  font-family: CustomIcons;
+}
+
+.ui.vertical.menu {
+  width: 198px;
+}
+
+.ui.vertical.menu, .ui.compact.vertical.menu {
+  padding: 0;
+
+  .item {
+    padding: 10px;
+    padding-left: 12px;
+    padding-right: 15px;
+
+    &:not(:last-child) {
+      border-bottom: 1px solid #e6e6e6;
+    }
+
+    &::before {
+      display: none;
+    }
+
+    i.left.icon {
+      float: none;
+      margin: 0em 0.35714286em 0em 0em;
+    }
+  }
+}
+
+.ui.dropdown {
+  padding: 7px;
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  color: #555;
+}
+
+// ============================================================================
+//  Specific element styles
+// ============================================================================
+
+#container {
+  display: flex;
+  flex-direction: row;
+}
+
+.main-wrapper {
+  padding: 10px 20px;
+  padding-top: 0;
+  max-width: 760px;
+  flex: 1;
+  overflow-x: hidden;
+}
+
+.buttons-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-top: 16px;
+  margin-bottom: 8px;
+
+  button {
+    margin-right: 20px;
+  }
+}
+
+@media (min-width: 1250px) {
+  body.large-image-preview-enabled {
+    #container {
+      height: 100vh;
+      overflow: hidden;
+    }
+    .main-wrapper {
+      height: calc(100% - 10px);
+      overflow: auto;
+    }
+    img.small.preview {
+      display: none;
+    }
+    img.large.preview {
+      display: block;
+    }
+  }
+}
+
+.extension-settings-link {
+  cursor: pointer;
+}
+
+.upload-status {
+  font-size: 1.1rem;
+}
