@@ -29,4 +29,4 @@ of features that make posting images as convenient and fast as possible.
 
 ## Sample screenshot
 
-![Example screenshot](https://dl.dropbox.com/s/taahykk77vfkwj0/improved-gelbooru-upload-sample-screenshot-medium.jpg)
+![Example screenshot](https://dl.dropbox.com/s/hp0einqwkp5590p/improved-gelbooru-upload-sample-screenshot-medium-v2.jpg)
