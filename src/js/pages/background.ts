@@ -14,9 +14,9 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
     if (!request.type || !sender.url || !sender.tab || !sender.tab.id) return
     const args = request.args || {}
     if (request.type === "query-gelbooru-iqdb") {
-        const file = new File([new Uint8Array(args.file).buffer], args.filename)
+        const blob = await fetch(args.fileUrl).then(r => r.blob())
         const formData = new FormData()
-        formData.append("file", file, file.name)
+        formData.append("file", blob, args.filename)
         const response = await fetch("https://gelbooru.iqdb.org/", {
             method: "POST",
             body: formData
@@ -37,5 +37,31 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
         return { html: responseText }
     } else if (request.type === "open-extension-options") {
         browser.runtime.openOptionsPage()
+    } else if (request.type === "notify-subscribed-extensions") {
+        const { subscribedExtensions } = await browser.storage.local.get({ "subscribedExtensions": [] })
+        for (const extensionId of subscribedExtensions) {
+            try {
+                browser.runtime.sendMessage(extensionId, {
+                    type: "pixiv-status-update",
+                    args
+                })
+            } catch (error) {}
+        }
+    }
+})
+
+// Make it possible for external extensions to register themselves.
+// Whenever a picture from pixiv is checked/posted, those extensions will
+// receive a message with the associated gelbooru IDs
+browser.runtime.onMessageExternal.addListener(async (request, sender) => {
+    if (!request.type) return
+    if (!sender.id) return
+    if (!request || !request.type) return
+    if (request.type === "subscribe-to-pixiv-status") {
+        const { subscribedExtensions } = await browser.storage.local.get({ "subscribedExtensions": [] })
+        if (subscribedExtensions.includes(sender.id)) return
+        subscribedExtensions.push(sender.id)
+        await browser.storage.local.set({ subscribedExtensions })
+        return true
     }
 })

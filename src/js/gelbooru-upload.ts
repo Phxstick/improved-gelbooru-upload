@@ -63,7 +63,7 @@ async function main() {
         searchDelay,
         apiCredentials
     })
-    const artistSearch = new ArtistSearch(tagInputs.getFirst())
+    const artistSearch = new ArtistSearch(tagInputs.getFirst(), fileUpload)
     const ratingSelection = new RadioButtons({
         name: "rating",
         values: ["e", "q", "s"],
@@ -132,10 +132,22 @@ async function main() {
         if (response.redirected) {  // Can't read code 302 directly, check for redirection
             const urlParts = new URL(response.url)
             if (urlParts.searchParams.has("id")) {
-                const postId = urlParts.searchParams.get("id")
+                const postId = urlParts.searchParams.get("id")!
                 const postLink = `<a target="_blank" href="${response.url}">${postId}</a>`
                 uploadStatus.innerHTML = "Upload successful! Created post with ID " + postLink
                 uploadStatus.classList.add("success")
+
+                // Notify subscribed extensions if an image from Pixiv has been uploaded
+                if (fileUpload.getPixivId()) {
+                    browser.runtime.sendMessage({
+                        type: "notify-subscribed-extensions",
+                        args: {
+                            pixivIdToGelbooruIds: {
+                                [fileUpload.getPixivId()]: [postId]
+                            }
+                        }
+                    })
+                }
             } else {
                 uploadStatus.textContent = "Unexpected server response."
                 uploadStatus.classList.add("failure")

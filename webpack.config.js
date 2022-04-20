@@ -5,7 +5,7 @@ const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 const RemovePlugin = require("remove-files-webpack-plugin");
 
 module.exports = {
-    mode: "production",
+    mode: "development",
     // Without this, webpack uses "eval" which is not allowed in an extension
     devtool: 'cheap-module-source-map',
     entry: {

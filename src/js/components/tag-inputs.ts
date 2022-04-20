@@ -188,6 +188,12 @@ export default class TagInputs {
                 openTagTypePopup(tagElement)
             }, condition: singleTagSelected },
 
+            { title: "Browse tag", icon: "th", action: (tagElement) => {
+                const value = tagElement.dataset.value!.replaceAll(" ", "_")
+                const url = "https://gelbooru.com/index.php?page=post&s=list&tags=" + value
+                window.open(url, "_blank")?.focus()
+            }, condition: singleTagSelected },
+
             { title: "Copy tag", icon: "copy", action: (tagElement) => {
                 const value = tagElement.dataset.value!.replaceAll(" ", "_")
                 navigator.clipboard.writeText(value)

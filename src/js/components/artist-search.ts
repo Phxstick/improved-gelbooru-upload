@@ -4,6 +4,7 @@ import TagSearch from "js/generic/tag-search";
 import DropdownMenu from "js/generic/dropdown-menu";
 import { E } from "js/utility"
 import "./artist-search.scss"
+import { FileUpload } from "js/components/file-upload";
 
 const RECENT_ARTISTS_KEY = "recentlySearchedArtists"
 
@@ -13,7 +14,7 @@ export default class ArtistSearch extends Component {
     private recentlySearchedArtists: DropdownMenu
     private searching: boolean
 
-    constructor(tagInput: TagSearch) {
+    constructor(tagInput: TagSearch, fileUpload: FileUpload) {
         super()
         this.searching = false
         this.tagInput = tagInput
@@ -67,6 +68,15 @@ export default class ArtistSearch extends Component {
         })
         this.searchField.addEventListener("focusout", () => {
             this.reset()
+        })
+
+        // If a Pixiv image was loaded from a webpage, clicking the search
+        // field will determine the artist tag from the picture URL
+        this.searchField.addEventListener("click", () => {
+            if (this.searching) return
+            const url = fileUpload.getUrl()
+            if (!url) return
+            this.searchByUrl(url)
         })
 
         // Start search when pasting a URL
