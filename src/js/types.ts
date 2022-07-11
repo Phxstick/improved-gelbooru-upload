@@ -6,6 +6,7 @@ export interface Settings {
     separateTagsWithSpace: boolean
     showLargeImagePreview: boolean
     splitTagInputIntoGroups: boolean
+    enableTabs: boolean
     hideTitleInput: boolean
     minimumPostCount: number
     searchDelay: number
@@ -20,9 +21,4 @@ export type SettingsDefinition = {
         details?: string,
         subSettings?: (keyof Settings)[]
     }
-}
-
-export interface ApiCredentials {
-    apiKey: string
-    userId: string
 }

@@ -1,0 +1,195 @@
+.main-interface-wrapper {
+  display: flex;
+  flex-direction: row;
+}
+
+.main-wrapper {
+  flex: 1;
+  padding: 10px 20px;
+  max-width: 760px;
+  overflow-x: hidden;
+
+  &.partial-scrolling {
+    max-height: 100vh;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    padding-right: 10px;
+
+    .interface-wrapper {
+      // Not sure if this is still needed in a flex-box, doesn't seem to make any difference now
+      min-height: 0;  // Required to make it shrink
+
+      // NOTE: "%" in flex-basis is necessary, with just "0" it doesn't work properly in all cases
+      flex-basis: 0%;  // Allow element to shrink
+      flex-grow: 1;  // Make sure it still grows as large as possible
+
+      overflow: auto;
+      border-top: 1px solid transparent;
+      border-bottom: 1px solid transparent;
+      border-image: linear-gradient(to right, transparent, 5%, grey, 70%, transparent) 1;
+      margin-top: 10px;
+      padding-bottom: 10px;
+      padding-right: 10px;
+
+      // Extend the fading border to the left side 
+      margin-left: -12px;
+      padding-left: 12px;
+
+      &::-webkit-scrollbar-track {
+        background: transparent;
+      }
+    }
+  }
+}
+
+.tabs-wrapper {
+  max-height: 340px;  // Make it such that at least 2 complete rows of tabs are visible at once
+  overflow: auto;
+
+  // Add padding so that shadow of selected tabs is not cut off,
+  // but keep total width and position the same
+  padding-left: 4px;
+  padding-bottom: 4px;
+  padding-right: 4px;
+  width: 100%;
+  margin-left: -4px;
+
+  .tabs-container {
+    display: inline;
+  }
+  .tab {
+    display: inline-block;
+    margin-right: 6px;
+    margin-top: 6px;
+    border: 1px solid #aaa;
+    border-radius: 3px;
+    transition: background-color 0.15s;
+    cursor: pointer;    
+    min-width: 64px;
+    max-width: 135px;
+    user-select: none;
+
+    &.add-tab-button {
+      .tab-status {
+        pointer-events: none;
+      }
+    }
+
+    img.preview {
+      border-bottom-left-radius: 3px;
+      border-bottom-right-radius: 3px;
+      display: block;  // To get rid of margin below image
+      max-width: 125px;
+      max-height: 125px;
+      margin: auto;
+
+      &:not([src]) {
+        display: none;
+      }
+    }
+
+    .tab-status {
+      padding: 8px 5px;
+      font-size: 1.2rem;
+      color: #555;
+      text-align: center;
+      transition: color 0.15s;
+
+      &.uploaded { color: #006ffa; }
+      &.success { color: seagreen; }
+      &.failure { color: crimson; }
+    }
+
+    &:hover {
+      .tab-status {
+        color: #444;
+        &.uploaded { color: darken(#006ffa, 4%); }
+        &.success { color: darken(seagreen, 4%); }
+        &.failure { color: darken(crimson, 4%); }
+      }
+      background-color: lighten(lavender, 2%);
+      border-color: lighten(mediumpurple, 10%);
+    }
+
+    &.main-selected {
+      .tab-status {
+        color: #222;
+        text-shadow: 0 0 3px white, 0 0 3px white;
+        &.uploaded { color: darken(#006ffa, 9%); }
+        &.success { color: darken(seagreen, 9%); }
+        &.failure { color: darken(crimson, 9%); }
+      }
+      background-color: darken(lavender, 6%);
+      border-color: mediumpurple;
+    }
+    &.selected {
+      .tab-status {
+        color: #333;
+        text-shadow: 0 0 3px white, 0 0 3px white;
+        &.uploaded { color: darken(#006ffa, 7%); }
+        &.success { color: darken(seagreen, 7%); }
+        &.failure { color: darken(crimson, 7%); }
+      }
+      background-color: peachpuff;  // mistyrose;
+      box-shadow: 0 0 3px 2px peachpuff;
+
+      &:not(.main-selected) {
+        border-color: rosybrown;
+      }
+      &.main-selected {
+        box-shadow: inset 0 0 16px 5px #cdcdf5, 0 0 3px 2px peachpuff;
+      }
+      // .tab-status {
+      //   color: #333;
+      //   &.uploaded { color: darken(#006ffa, 7%); }
+      //   &.success { color: darken(seagreen, 7%); }
+      //   &.failure { color: darken(crimson, 7%); }
+      // }
+      // background-color: darken(lavender, 1%);
+      // border-color: lighten(mediumpurple, 6%);
+    }
+  }
+}
+
+.buttons-container {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-top: 16px;
+  margin-bottom: 8px;
+
+  button {
+    margin-right: 20px;
+  }
+}
+
+.large-image-preview-wrapper {
+  display: none;
+}
+
+@media (min-width: 1250px) {
+  .main-interface-wrapper.large-image-preview-enabled {
+    height: 100vh;
+    overflow: hidden;
+
+    .main-wrapper {
+      max-height: 100vh;
+      box-sizing: border-box;
+      overflow: auto;
+    }
+    img.medium.preview {
+      display: none;
+    }
+    .large-image-preview-wrapper {
+      display: block;
+      margin-right: 10px;
+      margin-left: 10px;
+      align-self: center;
+    }
+  }
+}
+
+.upload-status {
+  font-size: 1.1rem;
+}

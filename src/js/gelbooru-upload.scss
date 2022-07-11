@@ -16,7 +16,13 @@
 }
 
 .info {
-  color: mediumvioletred;
+  color: mediumvioletred !important;
+}
+
+.dragover {
+  background-color: lavender !important;
+  border-color: mediumpurple !important;
+  box-shadow: 0 0 5px -1px mediumpurple !important;
 }
 
 .main-row {
@@ -73,12 +79,26 @@
   &:not(:last-child) {
     margin-right: 12px;
   }
-
   img {
     outline: 1px solid mediumpurple;
+    border-radius: 3px;
+  }
+}
+
+img.preview {
+  object-fit: contain;
+
+  &.small {
     max-width: 175px;
     max-height: 175px;
-    object-fit: contain;
+  }
+  &.medium {
+    max-height: 300px;
+    max-width: 300px;
+  }
+  &.large {
+    max-height: 100vh;
+    max-width: 55vw;
   }
 }
 
@@ -95,6 +115,35 @@
 
 input:focus {
   outline: none !important;
+}
+
+.pixiv-tags {
+  margin-top: 10px;
+}
+
+.pixiv-tag-wrapper {
+  margin-top: 2px;
+  margin-right: 12px;
+  display: inline-block;
+
+  .pixiv-tag {
+    color: rgb(61, 118, 153);
+    display: inline-block;
+    max-width: 68px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: top;  // Remove white-space caused by inline-block + hidden overflow, see a/51088033
+  }
+  .translated-pixiv-tag {
+    color: #707070;
+    font-size: 0.9rem;
+    margin-left: 4px;
+  }
+}
+
+.extension-settings-link {
+  cursor: pointer;
 }
 
 // ============================================================================
@@ -176,6 +225,7 @@ i.icon {
 
 .ui.vertical.menu {
   width: 198px;
+  min-height: unset;
 }
 
 .ui.vertical.menu, .ui.compact.vertical.menu {
@@ -208,60 +258,4 @@ i.icon {
   border-radius: 4px;
   border: 1px solid #e0e0e0;
   color: #555;
-}
-
-// ============================================================================
-//  Specific element styles
-// ============================================================================
-
-#container {
-  display: flex;
-  flex-direction: row;
-}
-
-.main-wrapper {
-  padding: 10px 20px;
-  padding-top: 0;
-  max-width: 760px;
-  flex: 1;
-  overflow-x: hidden;
-}
-
-.buttons-container {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  margin-top: 16px;
-  margin-bottom: 8px;
-
-  button {
-    margin-right: 20px;
-  }
-}
-
-@media (min-width: 1250px) {
-  body.large-image-preview-enabled {
-    #container {
-      height: 100vh;
-      overflow: hidden;
-    }
-    .main-wrapper {
-      height: calc(100% - 10px);
-      overflow: auto;
-    }
-    img.small.preview {
-      display: none;
-    }
-    img.large.preview {
-      display: block;
-    }
-  }
-}
-
-.extension-settings-link {
-  cursor: pointer;
-}
-
-.upload-status {
-  font-size: 1.1rem;
 }

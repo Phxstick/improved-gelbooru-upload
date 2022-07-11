@@ -71,12 +71,17 @@ export default class ArtistSearch extends Component {
         })
 
         // If a Pixiv image was loaded from a webpage, clicking the search
-        // field will determine the artist tag from the picture URL
-        this.searchField.addEventListener("click", () => {
-            if (this.searching) return
+        // field will determine the artist tag from the image URL
+        let imageUrlSearchConducted = false
+        this.searchField.addEventListener("click", async () => {
+            if (this.searching || imageUrlSearchConducted) return
             const url = fileUpload.getUrl()
             if (!url) return
+            imageUrlSearchConducted = true
             this.searchByUrl(url)
+        })
+        fileUpload.addFileUploadListener(() => {
+            imageUrlSearchConducted = false
         })
 
         // Start search when pasting a URL
@@ -111,13 +116,18 @@ export default class ArtistSearch extends Component {
         this.setStatus("Drag artist page URL here to find artist tag", "placeholder")
     }
 
-    async searchByUrl(url: string) {
-        if (this.searching) return
+    /**
+     * Search the Danbooru artist database for a given artist via URL.
+     * @param url Any URL associated the artist, e.g. the URL of a pixiv post.
+     * @returns Whether at least one artist tag has been found.
+     */
+    async searchByUrl(url: string): Promise<boolean> {
+        if (this.searching) return false
         try {
             new URL(url)
         } catch (error) {
             this.setStatus("Given item does not contain a valid URL.", "failure")
-            return
+            return false
         }
         this.searchField.blur()
         this.searchField.disabled = true
@@ -135,7 +145,9 @@ export default class ArtistSearch extends Component {
             doc = parser.parseFromString(response.html, "text/html")
         } catch (error) {
             this.setStatus("Failed to search for tags.", "failure")
-            return
+            this.searchField.disabled = false
+            this.searching = false
+            return false
         }
 
         // Extract artist tags from the HTML document
@@ -143,8 +155,9 @@ export default class ArtistSearch extends Component {
         const rows = [...table.querySelectorAll("tr")]
         if (rows.length === 0) {
             this.setStatus("No artist tag with the given URL exists.", "failure")
+            this.searchField.disabled = false
             this.searching = false
-            return
+            return false
         }
         const tagNames = rows.map(row =>
             row.querySelector("td.name-column a")!.textContent!.replaceAll("_", " "))
@@ -168,5 +181,6 @@ export default class ArtistSearch extends Component {
 
         this.searchField.disabled = false
         this.searching = false
+        return true
     }
 }

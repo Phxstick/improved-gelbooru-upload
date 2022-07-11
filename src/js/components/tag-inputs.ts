@@ -1,103 +1,8 @@
+import GelbooruApi from "js/gelbooru-api";
 import ContextMenu from "js/generic/context-menu";
 import TagSearch from "js/generic/tag-search";
-import { ApiCredentials } from "js/types";
 import { E } from "js/utility";
 import "./tag-inputs.scss"
-
-type TagType = "artist" | "character" | "copyright" | "metadata" | "tag" | "deprecated"
-
-interface TagInfo {
-    title: string,
-    type: TagType,
-    postCount: number,
-    ambiguous?: boolean
-}
-
-// Format returned by completion API
-interface RawTagCompletion {
-    category: TagType
-    label: string
-    post_count: string
-    type: "tag"
-    value: string
-}
-
-const numberToTagType: { [key in number]: TagType } = {
-    0: "tag",
-    1: "artist",
-    3: "copyright",
-    4: "character",
-    5: "metadata",
-    6: "deprecated"
-}
-
-// Format returned by tags API
-interface RawTagInfo {
-    id: number
-    name: string
-    count: number
-    type: number
-    ambiguous: 0 | 1
-}
-
-interface TagResponse {
-    "@attributes": {
-        limit: number
-        offset: number
-        count: number
-    }
-    tag?: RawTagInfo[]
-}
-
-// Get information about a single tag using the tags API
-async function getTagInfo(tagName: string, { userId, apiKey }: ApiCredentials): Promise<TagInfo | undefined> {
-    tagName = tagName.replaceAll(" ", "_")
-    const url = `https://gelbooru.com/index.php?page=dapi&s=tag&q=index&json=1&api_key=${apiKey}&user_id=${userId}1&name=${tagName}`
-    let response
-    try {
-        response = await fetch(url)
-    } catch (error) {
-        return
-    }
-    const responseData = await response.json() as TagResponse
-    if (!responseData.tag || responseData.tag.length === 0)
-        return { title: tagName, type: "tag", postCount: 0 }
-    const { count, type, ambiguous } = responseData.tag[0]
-    return { title: tagName, type: numberToTagType[type], postCount: count, ambiguous: ambiguous !== 0 }
-}
-
-// Get tag search completions for a given query
-async function getTagCompletions(query: string): Promise<TagInfo[] | undefined> {
-    let response
-    try {
-        response = await fetch(`https://gelbooru.com/index.php?page=autocomplete2&term=${query}&type=tag_query&limit=10`, { 
-            credentials: "same-origin",  // Send cookies
-            headers: { "Accept": "application/json" }
-        })
-    } catch (error) {
-        return
-    }
-    if (!response.ok) return []
-    const responseData = await response.json() as RawTagCompletion[]
-    return responseData.map(({ category, label, post_count }) =>
-        ({ type: category, title: label, postCount: parseInt(post_count) }))
-}
-
-// Change the type of a tag via form submission
-async function setTagType(tagElement: HTMLElement, type: TagType) {
-    const tagName = tagElement.dataset.value!.replaceAll(" ", "_")
-    const formData = new FormData()
-    formData.set("tag", tagName)
-    formData.set("type", type)
-    formData.set("commit", "Save")  // Not sure if this is needed
-    const response = await fetch("https://gelbooru.com/index.php?page=tags&s=edit", {
-        method: "POST",
-        body: formData
-    })
-    if (!response.ok) return
-    tagElement.dataset.type = type
-    if (type !== "tag") tagElement.classList.remove("rare")
-}
 
 // Create a popup menu for choosing a different tag type
 function openTagTypePopup(tagElement: HTMLElement) {
@@ -115,7 +20,7 @@ function openTagTypePopup(tagElement: HTMLElement) {
         const target = event.target as HTMLElement | null
         if (target === null) return
         if (target.parentElement !== tagTypeMenu) return
-        setTagType(tagElement, target.dataset.value as TagType)
+        GelbooruApi.setTagType(tagElement, target.dataset.value as GelbooruApi.TagType)
     })
     let clicked = false
     const clickListener = () => {
@@ -151,11 +56,12 @@ interface TagInputOptions {
     separateTagsWithSpace: boolean
     postCountThreshold: number
     searchDelay: number
-    apiCredentials: ApiCredentials
+    apiCredentials: GelbooruApi.Credentials
 }
 
 export default class TagInputs {
     private tags = new Set<string>()
+    private groupToTagInput = new Map<string, TagSearch>()
     private tagInputs: TagSearch[] = []
     private container = E("div", { class: "tag-inputs-container" })
 
@@ -211,7 +117,7 @@ export default class TagInputs {
             // ----------------------------------------------------------------
 
             { title: "Copy selected tags", icon: "copy", action: () => {
-                const selectedTags = activeTags .map(e => e.dataset.value!.replaceAll(" ", "_"))
+                const selectedTags = activeTags.map(e => e.dataset.value!.replaceAll(" ", "_"))
                 navigator.clipboard.writeText(selectedTags.join(" "))
             }, condition: multipleTagsSelected },
 
@@ -228,7 +134,7 @@ export default class TagInputs {
     }
 
     createInput(groupName: string, options: TagInputOptions) {
-        let lastResults: TagInfo[] | undefined
+        let lastResults: GelbooruApi.TagInfo[] | undefined
         const tagSearch = new TagSearch({
             multiSelect: true,
             allowAdditions: true,
@@ -252,7 +158,7 @@ export default class TagInputs {
             },
             getResults: async (query) => {
                 query = query.trim().toLowerCase().replaceAll(" ", "_")
-                lastResults = await getTagCompletions(query)
+                lastResults = await GelbooruApi.getTagCompletions(query)
                 return lastResults || []
             },
             itemBuilder: (data: any) => {
@@ -266,7 +172,7 @@ export default class TagInputs {
             checkMatch: (input, completion) => completion.replaceAll("-", " ").startsWith(input),
             onLabelCreate: async (label, tagName) => {
                 label.childNodes[0].textContent = tagName
-                let tagInfo: TagInfo | undefined
+                let tagInfo: GelbooruApi.TagInfo | undefined
 
                 // If tag is included in the last search completions, take data from there
                 if (lastResults) {
@@ -279,7 +185,7 @@ export default class TagInputs {
                 // Otherwise, request tag data via the Gelbooru API (if auth data is set)
                 const apiCred = options.apiCredentials
                 if (tagInfo === undefined && apiCred.apiKey && apiCred.userId) {
-                    tagInfo = await getTagInfo(tagName, apiCred)
+                    tagInfo = await GelbooruApi.getTagInfo(tagName, apiCred)
                 }
                 if (tagInfo === undefined) return
 
@@ -327,6 +233,7 @@ export default class TagInputs {
         })
 
         this.tagInputs.push(tagSearch)
+        this.groupToTagInput.set(groupName, tagSearch)
         this.container.appendChild(row)
     }
 
@@ -349,6 +256,26 @@ export default class TagInputs {
 
     getTags(): string[] {
         return [...this.tags]
+    }
+
+    getGroupedTags(): Map<string, string[]> {
+        const groupToTags = new Map<string, string[]>()
+        for (const [groupName, tagInput] of this.groupToTagInput.entries()) {
+            const elements = tagInput.getElement().querySelectorAll("a.ui.label")
+            if (elements.length === 0) continue
+            groupToTags.set(groupName, [...elements].map(
+                el => (el as HTMLElement).dataset.value!))
+        }
+        return groupToTags
+    }
+
+    insertGroupedTags(groupToTags: Map<string, string[]>): void {
+        for (const [groupName, tags] of groupToTags.entries()) {
+            const tagInput = this.groupToTagInput.get(groupName)
+            if (!tagInput) continue
+            const existingTags = tagInput.getValues()
+            tagInput.setValues([...existingTags, ...tags], true)
+        }
     }
 
     clear() {

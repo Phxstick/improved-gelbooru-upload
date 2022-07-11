@@ -1,33 +1,84 @@
+.file-input-wrapper {
+  display: flex;
+  flex-direction: row;
+  padding: 0;
+}
+
 .file-input-label {
-  display: block;
+  flex: 1;
+  padding: 7px;
+  padding-left: 10px;
   cursor: pointer;
 
   &.placeholder {
     color: dimgrey;
   }
-  &.dragover {
-    background-color: lavender;
-    border-color: mediumpurple;
-    box-shadow: 0 0 5px -1px mediumpurple;
-  }
 }
 
-img.preview {
-  object-fit: contain;
+.paste-file-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  cursor: pointer;
+  color: #aaa;
 
-  &.small {
-    max-height: 300px;
-    max-width: 300px;
-    margin-top: 10px;
-    outline: 1px solid mediumpurple;
+  .paste.icon, .paste-message, .paste-error-message {
+    padding: 7px;
+    padding-left: 12px;
+    user-select: none;
   }
-  &.large {
-    max-height: 100vh;
-    max-width: 55%;
-    margin-right: 10px;
-    margin-left: 10px;
-    align-self: center;
+  .paste-message, .paste-error-message {
+    padding-right: 12px;
     display: none;
+  }
+  .paste-message {
+    color: #707070;
+  }
+  .paste-error-message {
+    display: none;
+  }
+  .hidden-input {
+    width: 0;
+    border: 0;
+    padding: 0;
+  }
+
+  &:focus-within {
+    .paste-message {
+      display: block;
+    }
+    .paste.icon {
+      display: none;
+    }
+  }
+
+  &.show-paste-error {
+    .paste-error-message {
+      display: block;
+    }
+    .paste-message {
+      display: none;
+    }
+  }
+
+  // Display a short border on the left
+  position: relative;
+  &:before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 7px;
+    bottom: 7px;
+    width: 1px;
+    background-color: #d0d0d0;
+  }
+
+  &:hover {
+    color: #888;
+
+    &:before {
+      background-color: #b0b0b0;
+    }
   }
 }
 
@@ -35,6 +86,12 @@ img.preview {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
+
+  img.medium.preview {
+    margin-top: 10px;
+    outline: 1px solid mediumpurple;
+    border-radius: 3px;
+  }
 }
 
 .image-checks {

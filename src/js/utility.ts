@@ -172,6 +172,19 @@ export function convertNumberToString(n: number): string {
     return n.toString()
 }
 
+export async function getImageFromUrl(url: string): Promise<File | null> {
+    const [fileName] = url.split("/").slice(-1)
+    const splitName = fileName.split(".")
+    if (splitName.length < 2) return null
+    const fileType = fileName.split(".")[1]
+    const imageTypes = ["png", "jpg", "jpeg", "gif"]
+    if (!imageTypes.includes(fileType)) return null
+    const response = await fetch(url)
+    if (!response.ok) return null
+    const buffer = await response.arrayBuffer()
+    return new File([buffer], fileName, { type: `image/${fileType}` })
+}
+
 interface ToggleProps {
     label: string
     defaultValue: boolean

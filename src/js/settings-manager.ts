@@ -8,6 +8,7 @@ class SettingsManager {
     private static readonly defaults: Settings = {
         autoSelectFirstCompletion: true,
         showLargeImagePreview: true,
+        enableTabs: true,
         hideTitleInput: true,
         splitTagInputIntoGroups: true,
         tagGroups: [
@@ -34,6 +35,10 @@ class SettingsManager {
             showLargeImagePreview: {
                 type: "boolean",
                 text: "Display a large preview of the uploaded image on the right side of the page"
+            },
+            enableTabs: {
+                type: "boolean",
+                text: "Enable tabs"
             },
             hideTitleInput: {
                 type: "boolean",
@@ -89,11 +94,16 @@ class SettingsManager {
     public static async get<
         Key extends SettingKey,
         Value extends SettingValue<Key>
-    >(key: Key): Promise<Value> {
-        const storageKey = this.getStorageKey(key)
-        const values = await browser.storage.sync.get(storageKey)
-        return values[storageKey] !== undefined ?
-            values[storageKey] : this.defaults[key]
+    >(keys: Key[]): Promise<{ [key in Key]: Value }> {
+        const storageKeys = keys.map(key => this.getStorageKey(key))
+        const values = await browser.storage.sync.get(storageKeys)
+        const keyToValue: any = {}
+        for (const key of keys) {
+            const storageKey = this.getStorageKey(key)
+            keyToValue[key] = values[storageKey] !== undefined ?
+                values[storageKey] : this.defaults[key]
+        }
+        return keyToValue
     }
 
     public static async remove<

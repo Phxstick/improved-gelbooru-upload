@@ -30,10 +30,11 @@ window.onload = async () => {
     const settingsDefinitions = SettingsManager.getDefinitions()
     const keyToRow: { [key in keyof Settings]?: HTMLElement } = {}
     const toggleSubsettingsFuncs: ((show?: boolean) => void)[] = []
+    const values = await SettingsManager.getAll()
     for (const key in settingsDefinitions) {
         const settingKey = key as keyof Settings
+        const currentValue = values[settingKey]
         const definition = settingsDefinitions[settingKey]
-        const currentValue = await SettingsManager.get(settingKey)
         let element: HTMLElement
         if (definition.type === "boolean") {
             let toggleSubsettings: (show?: boolean) => void = () => {}
@@ -75,7 +76,7 @@ window.onload = async () => {
         } else if (definition.type === "string-list") {
             const multilineInput = new MultilineInput({
                 header: definition.text,
-                numRows: 8,
+                numRows: 6,
                 lines: currentValue as string[],
                 onChange: (lines) => {
                     SettingsManager.set(settingKey, lines)
