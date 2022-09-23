@@ -1,6 +1,6 @@
 {
   "name": "improved-gelbooru-upload",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Reconstruct the Gelbooru upload page with a bunch of useful features.",
   "author": "Phxstick",
   "scripts": {
