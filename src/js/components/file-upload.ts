@@ -232,7 +232,10 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
             args: {
                 pixivIdToGelbooruIds: {
                     [loadedPixivId]: gelbooruIds
-                }
+                },
+                filenameToGelbooruIds: fileInput.files ? {
+                    [fileInput.files[0].name]: gelbooruIds 
+                } : {}
             }
         })
     }

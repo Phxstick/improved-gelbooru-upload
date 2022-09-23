@@ -2,7 +2,7 @@ import browser from "webextension-polyfill";
 import GelbooruApi from "js/gelbooru-api";
 import SettingsManager from "js/settings-manager";
 
-const associatedExtensions = ["fcgihkdhpncemlnjcdgcmndmpeefcbeb"]
+const associatedExtensions = ["hbghinibnihlfahabmgdanonolmihbko"]
 const gelbooruUploadTabKey = "gelbooruUploadTabs"
 
 async function queryArtistDatabase(artistUrl: string): Promise<string> {
@@ -97,6 +97,23 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
             if (result !== undefined) return result
         }
         return { error: "Failed to communicate with the Gelbooru upload page." }
+    }
+    // Focus specific tab on request
+    else if (request.type === "focus-tab") {
+        if (!request.args || !request.args.filename) return {
+            error: `Tab to focus must be specified by parameter 'filename'.`
+        }
+        const storageData = await browser.storage.local.get([gelbooruUploadTabKey])
+        const tabId: number | undefined = storageData[gelbooruUploadTabKey]
+        if (!tabId) return {
+            error: "No Gelbooru upload page is currently open!"
+        }
+        const uploadTabExists = await browser.tabs.sendMessage(tabId,
+            { type: "focus-tab", args: request.args }).catch(() => {})
+        if (uploadTabExists) {
+            browser.tabs.update(tabId, { active: true })
+        }
+        return uploadTabExists
     }
     
     // Handle queries to Gelbooru/Danbooru from associated extensions

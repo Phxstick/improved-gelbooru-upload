@@ -54,7 +54,7 @@ namespace GelbooruApi {
      */
     export async function getTagInfo(tagName: string, { userId, apiKey }: Credentials): Promise<TagInfo | undefined> {
         tagName = tagName.replaceAll(" ", "_")
-        const url = `https://gelbooru.com/index.php?page=dapi&s=tag&q=index&json=1&api_key=${apiKey}&user_id=${userId}1&name=${tagName}`
+        const url = `https://gelbooru.com/index.php?page=dapi&s=tag&q=index&json=1&api_key=${apiKey}&user_id=${userId}1&name=${encodeURIComponent(tagName)}`
         let response
         try {
             response = await fetch(url)
@@ -74,7 +74,7 @@ namespace GelbooruApi {
     export async function getTagCompletions(query: string): Promise<TagInfo[] | undefined> {
         let response
         try {
-            response = await fetch(`https://gelbooru.com/index.php?page=autocomplete2&term=${query}&type=tag_query&limit=10`, { 
+            response = await fetch(`https://gelbooru.com/index.php?page=autocomplete2&term=${encodeURIComponent(query)}&type=tag_query&limit=10`, { 
                 credentials: "same-origin",  // Send cookies
                 headers: { "Accept": "application/json" }
             })
@@ -134,8 +134,9 @@ namespace GelbooruApi {
         const fullResults = []
         let pid = 0
         let count = Infinity
+        const tagsString = tags.map(tag => encodeURIComponent(tag)).join("+")
         while (100 * pid < count) {
-            const url = `https://gelbooru.com/index.php?page=dapi&s=post&q=index&api_key=${apiKey}&user_id=${userId}&json=1&pid=${pid}&tags=${tags.join("+")}`
+            const url = `https://gelbooru.com/index.php?page=dapi&s=post&q=index&api_key=${apiKey}&user_id=${userId}&json=1&pid=${pid}&tags=${tagsString}`
             const response = await fetch(url)
             const data = await response.json() as QueryResponse
             if (data.post === undefined) return []

@@ -96,8 +96,8 @@ export default class TagInputs {
 
             { title: "Browse tag", icon: "th", action: (tagElement) => {
                 const value = tagElement.dataset.value!.replaceAll(" ", "_")
-                const url = "https://gelbooru.com/index.php?page=post&s=list&tags=" + value
-                window.open(url, "_blank")?.focus()
+                const baseUrl = "https://gelbooru.com/index.php?page=post&s=list&tags="
+                window.open(baseUrl + encodeURIComponent(value), "_blank")?.focus()
             }, condition: singleTagSelected },
 
             { title: "Copy tag", icon: "copy", action: (tagElement) => {
@@ -118,6 +118,7 @@ export default class TagInputs {
 
             { title: "Copy selected tags", icon: "copy", action: () => {
                 const selectedTags = activeTags.map(e => e.dataset.value!.replaceAll(" ", "_"))
+                activeTags.forEach(tag => tag.classList.remove("active"))
                 navigator.clipboard.writeText(selectedTags.join(" "))
             }, condition: multipleTagsSelected },
 

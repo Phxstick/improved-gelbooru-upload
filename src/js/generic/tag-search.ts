@@ -110,9 +110,17 @@ export default class TagSearch extends Component {
             onRemove: (value) => {
                 if (!this.props.multiSelect) return
                 if (this.listenersDisabled) return
-                // Semantic UI escapes single/double quotes in value, unescape here
-                const unescaped = value.replace("&quot;", '"').replace("&#x27;", "'")
-                this.props.onRemove(unescaped)
+                // Semantic UI escapes HTML characters in tag value, unescape here
+                const replacements = {
+                    "&quot;": '"',
+                    "&#x27;": "'",
+                    "&amp;": '&',
+                    "&gt;": '>',
+                    "&lt;": '<'
+                }
+                Object.entries(replacements).forEach(
+                    ([seq, repl]) => { value = value.replace(seq, repl) })
+                this.props.onRemove(value)
             },
             // Listener for single-select type
             onChange: (value) => {
@@ -200,13 +208,25 @@ export default class TagSearch extends Component {
                         const childRect = firstChild.getBoundingClientRect()
                         const numResults = resultsContainer.children.length
                         const inputRect = this.root.getBoundingClientRect()
-                        // +2 to account for 1px border on both sides, +8 for margin
+                        // +2 to account for 1px border on both sides, +7 for margin
                         const resultsBottom =
-                            childRect.top + numResults * childRect.height + 2
+                            inputRect.bottom + 7 + numResults * childRect.height + 2
                         if (resultsBottom > viewBoundaries.bottom ||
                                 childRect.height + 8 < inputRect.bottom - resultsBottom) {
                             resultsContainer.classList.add("above")
                             this.reverse = true
+                        }
+                        // Make position of dropdown fixed so it doesn't get contained to scrollable area
+                        // (downside is that it doesn't move/expand when scrolling or resizing viewport)
+                        resultsContainer.style.setProperty("position", "fixed")
+                        resultsContainer.style.setProperty("left", `${inputRect.left}px`, "important")
+                        resultsContainer.style.setProperty("width", `${inputRect.width - 2}px`)
+                        if (this.reverse) {
+                            resultsContainer.style.setProperty("top", "unset", "important")
+                            resultsContainer.style.setProperty("bottom", `${window.innerHeight - inputRect.top}px`, "important")
+                        } else {
+                            resultsContainer.style.setProperty("bottom", "unset", "important")
+                            resultsContainer.style.setProperty("top", `${inputRect.bottom}px`, "important")
                         }
                     }
                 } else {
@@ -293,6 +313,12 @@ export default class TagSearch extends Component {
                 resultsContainer.classList.remove("above")
                 this.reverse = false
                 this.dropdown.classList.remove("focus")
+            }
+
+            // Semantic UI for some reason doesn't allow entering certain characters,
+            // so they are manually inserted here
+            if (event.key === "<" || event.key === ">") {
+                innerSearchEntry.value += event.key
             }
 
             // Select previous/next entry when arrow keys are pressed 

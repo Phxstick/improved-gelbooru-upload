@@ -58,6 +58,11 @@ async function main() {
             dataTransfer.items.add(fileObj)
             return mainInterface.addFile(dataTransfer, pixivTags)
         }
+        else if (request.type === "focus-tab") {
+            const { filename } = request.args
+            if (!filename) return null
+            return mainInterface.focusTabByFilename(filename)
+        }
     })
 
     const settings =  await SettingsManager.getAll()

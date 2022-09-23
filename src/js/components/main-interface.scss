@@ -18,7 +18,7 @@
 
     .interface-wrapper {
       // Not sure if this is still needed in a flex-box, doesn't seem to make any difference now
-      min-height: 0;  // Required to make it shrink
+      min-height: 0;  // Make it shrink
 
       // NOTE: "%" in flex-basis is necessary, with just "0" it doesn't work properly in all cases
       flex-basis: 0%;  // Allow element to shrink
@@ -28,7 +28,6 @@
       border-top: 1px solid transparent;
       border-bottom: 1px solid transparent;
       border-image: linear-gradient(to right, transparent, 5%, grey, 70%, transparent) 1;
-      margin-top: 10px;
       padding-bottom: 10px;
       padding-right: 10px;
 
@@ -44,16 +43,23 @@
 }
 
 .tabs-wrapper {
-  max-height: 340px;  // Make it such that at least 2 complete rows of tabs are visible at once
+  max-height: 240px;  // Make it such that about one and a half rows of tabs are visible at once
   overflow: auto;
 
-  // Add padding so that shadow of selected tabs is not cut off,
-  // but keep total width and position the same
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  // Add padding so that shadow of selected tabs is not cut off
   padding-left: 4px;
-  padding-bottom: 4px;
+  margin-left: -4px;  // Negative offset to keep container at the original position
   padding-right: 4px;
-  width: 100%;
-  margin-left: -4px;
+  padding-bottom: 14px;
+  padding-top: 10px;
+
+  // Make the container go all the way to the edge of the screen, so that no space is wasted.
+  // This also makes sure that tabs are not abruptly cut off on the background while scrolling.
+  margin-top: -10px;
 
   .tabs-container {
     display: inline;
@@ -156,8 +162,8 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  margin-top: 16px;
-  margin-bottom: 8px;
+  margin-top: 14px;
+  margin-bottom: 6px;
 
   button {
     margin-right: 20px;

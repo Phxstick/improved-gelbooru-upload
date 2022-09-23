@@ -142,6 +142,9 @@ export default class GelbooruUploadInterface extends Component {
                         args: {
                             pixivIdToGelbooruIds: {
                                 [this.fileUpload.getPixivId()]: [postId]
+                            },
+                            filenameToGelbooruIds: {
+                                [file.name]: [postId]
                             }
                         }
                     })

@@ -23,8 +23,11 @@ export default class MainInterface extends Component {
     readonly tabToStatus = new WeakMap<HTMLElement, TabStatus>()
     readonly tabToStatusMessage = new WeakMap<HTMLElement, string>()
     readonly tabToScrollTop = new WeakMap<HTMLElement, number>()
+    readonly tabToFilename = new WeakMap<HTMLElement, string>()
+    readonly filenameToTab = new Map<string, HTMLElement>()
     selectedTab!: HTMLElement
 
+    tabsWrapper: HTMLElement
     tabsContainer: HTMLElement
     interfaceWrapper: HTMLElement
     largeImagePreviewWrapper: HTMLElement
@@ -82,6 +85,9 @@ export default class MainInterface extends Component {
                 tab.remove()
                 if (tabsContainer.children.length === 1) {
                     this.mainWrapper.classList.remove("partial-scrolling")
+                    if (this.settings.hideTabs) {
+                        this.tabsWrapper.classList.add("hidden")
+                    }
                 }
             }, condition: (tab) => {
                 return !multipleTabsSelected(tab)
@@ -114,6 +120,9 @@ export default class MainInterface extends Component {
                 }
                 if (tabsContainer.children.length === 1) {
                     this.mainWrapper.classList.remove("partial-scrolling")
+                    if (this.settings.hideTabs) {
+                        this.tabsWrapper.classList.add("hidden")
+                    }
                 }
             }, condition: (tab) => {
                 return multipleTabsSelected(tab)
@@ -163,6 +172,9 @@ export default class MainInterface extends Component {
         const tabsWrapper = E("div", { class: "tabs-wrapper" }, [
             tabsContainer, addTabButton
         ])
+        this.tabsWrapper = tabsWrapper
+        if (settings.hideTabs) tabsWrapper.classList.add("hidden")
+
         const interfaceWrapper = E("div", { class: "interface-wrapper" })
         this.interfaceWrapper = interfaceWrapper
         const largeImagePreviewWrapper = E("div", { class: "large-image-preview-wrapper" })
@@ -193,9 +205,8 @@ export default class MainInterface extends Component {
         ])
 
         this.mainWrapper = E("div", { class: "main-wrapper" }, [
-            interfaceWrapper, buttonContainer
+            tabsWrapper, interfaceWrapper, buttonContainer
         ])
-        if (settings.enableTabs) this.mainWrapper.prepend(tabsWrapper)
         this.root = E("div", { class: "main-interface-wrapper" }, [
             this.mainWrapper
         ])
@@ -243,6 +254,7 @@ export default class MainInterface extends Component {
         })
         if (this.tabsContainer.children.length > 1) {
             this.mainWrapper.classList.add("partial-scrolling")
+            this.tabsWrapper.classList.remove("hidden")
         }
         if (select) this.selectTab(tab)
         return tab
@@ -303,6 +315,9 @@ export default class MainInterface extends Component {
         this.setTabStatus(this.selectedTab, TabStatus.Empty)
         const imagePreview = this.selectedTab.querySelector("img")!
         imagePreview.removeAttribute("src")
+        const filename = this.tabToFilename.get(tab)
+        if (filename) this.filenameToTab.delete(filename)
+        this.tabToFilename.delete(tab)
         const tabNumber = [...this.tabsContainer.children].indexOf(this.selectedTab) + 1
         const statusContainer = this.selectedTab.querySelector(".tab-status")!
         statusContainer.innerHTML = `Tab ${tabNumber}`
@@ -333,10 +348,20 @@ export default class MainInterface extends Component {
         if (!firstEmptyTab) {
             firstEmptyTab = this.addTab(false)
         }
+        const filename = dataTransfer.files[0].name
+        this.filenameToTab.set(filename, firstEmptyTab)
+        this.tabToFilename.set(firstEmptyTab, filename)
         const instance = this.tabToInstance.get(firstEmptyTab)!
         const checkResult = instance.passDroppedFile(dataTransfer)
         // Timeout is needed so on-upload handler doesn't immediately clear tags again
         setTimeout(() => instance.displayPixivTags(pixivTags), 0)
         return checkResult
+    }
+
+    focusTabByFilename(filename: string): boolean {
+        const tab = this.filenameToTab.get(filename)
+        if (!tab) return false
+        this.selectTab(tab)
+        return true
     }
 }
