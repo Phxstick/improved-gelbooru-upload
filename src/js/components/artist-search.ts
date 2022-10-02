@@ -13,10 +13,12 @@ export default class ArtistSearch extends Component {
     private searchField: HTMLInputElement
     private recentlySearchedArtists: DropdownMenu
     private searching: boolean
+    private quickSearchPossible: boolean
 
     constructor(tagInput: TagSearch, fileUpload: FileUpload) {
         super()
         this.searching = false
+        this.quickSearchPossible = false
         this.tagInput = tagInput
 
         // Create elements
@@ -63,25 +65,33 @@ export default class ArtistSearch extends Component {
 
         // Tell user that pasting is possible when input is focussed
         this.searchField.addEventListener("focusin", () => {
-            if (this.searching) return
+            if (this.searching || this.quickSearchPossible) return
             this.setStatus("Press Ctrl + V to paste URL", "placeholder")
         })
         this.searchField.addEventListener("focusout", () => {
+            if (this.searching) return
             this.reset()
         })
 
-        // If a Pixiv image was loaded from a webpage, clicking the search
-        // field will determine the artist tag from the image URL
-        let imageUrlSearchConducted = false
-        this.searchField.addEventListener("click", async () => {
-            if (this.searching || imageUrlSearchConducted) return
-            const url = fileUpload.getUrl()
-            if (!url) return
-            imageUrlSearchConducted = true
-            this.searchByUrl(url)
-        })
+        // Upon upload, determine if quick search is possible
+        // (if the file contains a URL from Pixiv)
+        const quickSearchHosts = ["i.pximg.net", "www.pixiv.net"]
         fileUpload.addFileUploadListener(() => {
-            imageUrlSearchConducted = false
+            this.quickSearchPossible = false
+            const url = fileUpload.getUrl()
+            if (url) {
+                const urlParts = new URL(url)
+                if (quickSearchHosts.includes(urlParts.hostname)) {
+                    this.quickSearchPossible = true
+                }
+            }
+            this.reset()
+        })
+        // If quick search is possible, it can be triggered with just a click
+        this.searchField.addEventListener("click", async () => {
+            if (this.searching || !this.quickSearchPossible) return
+            this.quickSearchPossible = false
+            this.searchByUrl(fileUpload.getUrl())
         })
 
         // Start search when pasting a URL
@@ -113,7 +123,11 @@ export default class ArtistSearch extends Component {
     }
 
     reset() {
-        this.setStatus("Drag artist page URL here to find artist tag", "placeholder")
+        if (this.quickSearchPossible) {
+            this.setStatus("Click here to search for the artist tag", "placeholder")
+        } else {
+            this.setStatus("Drag artist page URL here to find artist tag", "placeholder")
+        }
     }
 
     /**

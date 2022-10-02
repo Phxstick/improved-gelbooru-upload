@@ -83,11 +83,9 @@ export default class MainInterface extends Component {
                     }
                 }
                 tab.remove()
-                if (tabsContainer.children.length === 1) {
+                if (tabsContainer.children.length === 1 && !this.settings.showTabs) {
                     this.mainWrapper.classList.remove("partial-scrolling")
-                    if (this.settings.hideTabs) {
-                        this.tabsWrapper.classList.add("hidden")
-                    }
+                    this.tabsWrapper.classList.add("hidden")
                 }
             }, condition: (tab) => {
                 return !multipleTabsSelected(tab)
@@ -118,11 +116,9 @@ export default class MainInterface extends Component {
                 for (const otherTab of tabSelection.get()) {
                     otherTab.remove()
                 }
-                if (tabsContainer.children.length === 1) {
+                if (tabsContainer.children.length === 1 && !this.settings.showTabs) {
                     this.mainWrapper.classList.remove("partial-scrolling")
-                    if (this.settings.hideTabs) {
-                        this.tabsWrapper.classList.add("hidden")
-                    }
+                    this.tabsWrapper.classList.add("hidden")
                 }
             }, condition: (tab) => {
                 return multipleTabsSelected(tab)
@@ -173,7 +169,7 @@ export default class MainInterface extends Component {
             tabsContainer, addTabButton
         ])
         this.tabsWrapper = tabsWrapper
-        if (settings.hideTabs) tabsWrapper.classList.add("hidden")
+        if (!settings.showTabs) tabsWrapper.classList.add("hidden")
 
         const interfaceWrapper = E("div", { class: "interface-wrapper" })
         this.interfaceWrapper = interfaceWrapper
@@ -207,6 +203,7 @@ export default class MainInterface extends Component {
         this.mainWrapper = E("div", { class: "main-wrapper" }, [
             tabsWrapper, interfaceWrapper, buttonContainer
         ])
+        if (settings.showTabs) this.mainWrapper.classList.add("partial-scrolling")
         this.root = E("div", { class: "main-interface-wrapper" }, [
             this.mainWrapper
         ])
@@ -252,7 +249,7 @@ export default class MainInterface extends Component {
                 statusContainer.classList.add("failure")
             }
         })
-        if (this.tabsContainer.children.length > 1) {
+        if (this.tabsContainer.children.length > 1 && !this.settings.showTabs) {
             this.mainWrapper.classList.add("partial-scrolling")
             this.tabsWrapper.classList.remove("hidden")
         }
@@ -301,6 +298,7 @@ export default class MainInterface extends Component {
         this.interfaceWrapper.scrollTop = this.tabToScrollTop.get(tab)!
         this.selectedTab = tab
         this.selectedTab.classList.add("main-selected")
+        this.selectedTab.scrollIntoView({ block: "nearest" })
         this.setTabStatus(tab, this.tabToStatus.get(tab)!, this.tabToStatusMessage.get(tab)!)
         if (this.settings.showLargeImagePreview) {
             if (this.largeImagePreviewWrapper.firstChild)

@@ -159,7 +159,16 @@ export default class TagInputs {
             },
             getResults: async (query) => {
                 query = query.trim().toLowerCase().replaceAll(" ", "_")
+                query = query.replaceAll("\\", "\\\\")  // Replace backslash with double backslash
                 lastResults = await GelbooruApi.getTagCompletions(query)
+                if (lastResults) {
+                    // Some tags are emojis like >_<, use underscore instead of space in those cases
+                    for (const result of lastResults) {
+                        if (result.title.length === 3 && result.title[1] === " ") {
+                            result.title = result.title[0] + "_" + result.title[2]
+                        }
+                    }
+                }
                 return lastResults || []
             },
             itemBuilder: (data: any) => {
@@ -170,7 +179,9 @@ export default class TagInputs {
                         `<div class="title">${data.title}&nbsp;&nbsp;(${postCountString})</div></div></a>`
             },
             transformInput: (value) => value.replaceAll("_", " ").trim().toLowerCase(),
-            checkMatch: (input, completion) => completion.replaceAll("-", " ").startsWith(input),
+            checkMatch: (input, completion) =>
+                completion.replaceAll("-", " ").replaceAll("_", " ").toLowerCase()
+                    .startsWith(input.replaceAll("-", " ").toLowerCase()),
             onLabelCreate: async (label, tagName) => {
                 label.childNodes[0].textContent = tagName
                 let tagInfo: GelbooruApi.TagInfo | undefined

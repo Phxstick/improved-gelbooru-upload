@@ -6,7 +6,7 @@ export interface Settings {
     separateTagsWithSpace: boolean
     showLargeImagePreview: boolean
     splitTagInputIntoGroups: boolean
-    hideTabs: boolean
+    showTabs: boolean
     hideTitleInput: boolean
     minimumPostCount: number
     searchDelay: number

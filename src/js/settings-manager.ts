@@ -8,7 +8,7 @@ class SettingsManager {
     private static readonly defaults: Settings = {
         autoSelectFirstCompletion: true,
         showLargeImagePreview: true,
-        hideTabs: true,
+        showTabs: false,
         hideTitleInput: true,
         splitTagInputIntoGroups: true,
         tagGroups: [
@@ -36,9 +36,9 @@ class SettingsManager {
                 type: "boolean",
                 text: "Display a large preview of the uploaded image on the right side of the page"
             },
-            hideTabs: {
+            showTabs: {
                 type: "boolean",
-                text: "Hide tab bar"
+                text: "Show tab bar"
             },
             hideTitleInput: {
                 type: "boolean",

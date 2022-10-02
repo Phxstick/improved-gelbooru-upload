@@ -138,7 +138,6 @@ export default class TagSearch extends Component {
         // State variables
         let resultIndex = 0
         let selectionRemoved = false
-        let valueChanged = false
         let currentResults: { title: string, id: number }[]
 
         // Custom search results
@@ -185,7 +184,6 @@ export default class TagSearch extends Component {
 
             onResults: (response) => {
                 currentResults = response.results
-                valueChanged = false
             },
 
             onResultsAdd: (html) => {
@@ -267,7 +265,7 @@ export default class TagSearch extends Component {
             // Add selected value to the tag list
             let inputText = this.props.transformInput(innerSearchEntry.value)
             if (!selectionRemoved && resultsContainer.children.length > 0 &&
-                    (!valueChanged || this.props.checkMatch(inputText, currentResults[resultIndex].title))) {
+                    (inputText.includes("*") || this.props.checkMatch(inputText, currentResults[resultIndex].title))) {
                 const value = currentResults[resultIndex].title
                 if (this.props.validateAddition(value)) {
                     $(this.dropdown).dropdown("set selected", [value])
@@ -292,7 +290,6 @@ export default class TagSearch extends Component {
                 resultsContainer.classList.remove("above")
                 this.reverse = false
             }
-            valueChanged = true
         })
 
         innerSearchEntry.addEventListener("keydown", (event) => {
