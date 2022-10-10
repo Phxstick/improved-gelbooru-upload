@@ -136,14 +136,15 @@ export default class TagInputs {
 
     createInput(groupName: string, options: TagInputOptions) {
         let lastResults: GelbooruApi.TagInfo[] | undefined
+        const specialChars = /[-_~/!.:;+=|]/g
         const tagSearch = new TagSearch({
             multiSelect: true,
             allowAdditions: true,
             maxResults: 10,
             searchDelay: options.searchDelay,
             placeholder: "",
-            delimiterKeyCode: options.separateTagsWithSpace ? 32 : 226,
-            delimiter: options.separateTagsWithSpace ? " " : "|",
+            delimiterKeyCode: options.separateTagsWithSpace ? 32 : 0,
+            delimiter: options.separateTagsWithSpace ? " " : "\u00A0",  // Non-breaking space
             selectFirstResult: options.selectFirstResult,
             onAdd: (value) => {
                 const tagName = value.trim().toLowerCase().replaceAll(" ", "_")
@@ -161,14 +162,14 @@ export default class TagInputs {
                 query = query.trim().toLowerCase().replaceAll(" ", "_")
                 query = query.replaceAll("\\", "\\\\")  // Replace backslash with double backslash
                 lastResults = await GelbooruApi.getTagCompletions(query)
-                if (lastResults) {
-                    // Some tags are emojis like >_<, use underscore instead of space in those cases
-                    for (const result of lastResults) {
-                        if (result.title.length === 3 && result.title[1] === " ") {
-                            result.title = result.title[0] + "_" + result.title[2]
-                        }
-                    }
-                }
+                // if (lastResults) {
+                //     // Some tags are emojis like >_<, use underscore instead of space in those cases
+                //     for (const result of lastResults) {
+                //         if (result.title.length === 3 && result.title[1] === " ") {
+                //             result.title = result.title[0] + "_" + result.title[2]
+                //         }
+                //     }
+                // }
                 return lastResults || []
             },
             itemBuilder: (data: any) => {
@@ -180,8 +181,7 @@ export default class TagInputs {
             },
             transformInput: (value) => value.replaceAll("_", " ").trim().toLowerCase(),
             checkMatch: (input, completion) =>
-                completion.replaceAll("-", " ").replaceAll("_", " ").toLowerCase()
-                    .startsWith(input.replaceAll("-", " ").toLowerCase()),
+                completion.replaceAll(specialChars, " ").toLowerCase().startsWith(input.replaceAll(specialChars, " ")),
             onLabelCreate: async (label, tagName) => {
                 label.childNodes[0].textContent = tagName
                 let tagInfo: GelbooruApi.TagInfo | undefined

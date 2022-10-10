@@ -312,12 +312,6 @@ export default class TagSearch extends Component {
                 this.dropdown.classList.remove("focus")
             }
 
-            // Semantic UI for some reason doesn't allow entering certain characters,
-            // so they are manually inserted here
-            if (event.key === "<" || event.key === ">") {
-                innerSearchEntry.value += event.key
-            }
-
             // Select previous/next entry when arrow keys are pressed 
             if ((!this.reverse && event.key === "ArrowUp")
                     || (this.reverse && event.key === "ArrowDown")) {
