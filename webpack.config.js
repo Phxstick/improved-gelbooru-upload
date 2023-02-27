@@ -5,13 +5,13 @@ const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 const RemovePlugin = require("remove-files-webpack-plugin");
 
 module.exports = {
-    mode: "production",
+    mode: "development",
     // Without this, webpack uses "eval" which is not allowed in an extension
     devtool: 'cheap-module-source-map',
     entry: {
         background: "./src/js/pages/background.ts",
         settings: "./src/js/pages/settings.ts",
-        gelbooruUpload: "./src/js/gelbooru-upload.ts"
+        contentScript: "./src/js/main.ts"
     },
     output: {
         publicPath: "",

@@ -20,12 +20,14 @@ import "fomantic-ui/dist/components/icon.min.css"
 import "fomantic-ui/dist/components/label.min.css"
 import "fomantic-ui/dist/components/menu.min.css"
 
-import "./gelbooru-upload.scss"
+import "./main.scss"
 
 import browser from "webextension-polyfill";
 import { E } from "js/utility"
 import SettingsManager from "js/settings-manager"
 import MainInterface from "js/components/main-interface"
+import { HostName, BooruApi, Message } from "js/types"
+import { getApi } from "js/api"
 
 // Import font here because it doesn't work with pure CSS in a content script
 const iconsFontUrl = browser.runtime.getURL("icons.woff2")
@@ -36,9 +38,8 @@ document.head.appendChild(E("style", {}, `
 }
 `))
 
-// Set custom title and delete original stylesheet (only use custom styles)
-document.title = "Gelbooru upload"
-document.head.querySelector("link[rel=stylesheet]")?.remove()
+// Delete original stylesheets (only use custom styles)
+document.head.querySelectorAll("link[rel=stylesheet]").forEach(s => s.remove())
 
 async function main() {
     browser.runtime.onMessage.addListener(async (request, sender) => {
@@ -56,23 +57,41 @@ async function main() {
             const dataTransfer = new DataTransfer()
             dataTransfer.setData("text/uri-list", url)
             dataTransfer.items.add(fileObj)
-            return mainInterface.addFile(dataTransfer, pixivTags)
+            const result = await mainInterface.addFile(dataTransfer, pixivTags)
+            return { ...result, host: api.host }
         }
         else if (request.type === "focus-tab") {
-            const { filename } = request.args
+            const { filename, host } = request.args
+            if (host && host !== api.host) return null
             if (!filename) return null
             return mainInterface.focusTabByFilename(filename)
         }
     })
 
-    const settings =  await SettingsManager.getAll()
-    const mainInterface = new MainInterface(settings)
+    let api: BooruApi
+    const settings = await SettingsManager.getAll()
+    const host = window.location.host
+    if (host === "gelbooru.com") {
+        document.title = "New upload | Gelbooru"
+        api = await getApi(HostName.Gelbooru, settings)
+    } else if (host === "danbooru.donmai.us") {
+        // On Danbooru, authentification can be done using a CSRF token instead
+        const metaElem = document.head.querySelector("meta[name='csrf-token']")
+        const csrfToken = metaElem ? metaElem.getAttribute("content") : undefined
+        api = await getApi(HostName.Danbooru, settings, csrfToken || undefined)
+    } else {
+        throw new Error(`Unknown host ${host}.`)
+    }
 
-    const container = document.getElementById("container")!
-    container.innerHTML = ""
-    container.appendChild(mainInterface.getElement())
+    const mainInterface = new MainInterface(api, settings)
+    // Body needs to be replaced on Danbooru to get rid of event listeners
+    document.body = document.createElement("body")
+    document.body.appendChild(mainInterface.getElement())
 
-    browser.runtime.sendMessage({ type: "register-upload-page-tab" })
+    browser.runtime.sendMessage({
+        type: Message.RegisterUploadPageTab,
+        args: { host: api.host } 
+    })
 }
 
 main()

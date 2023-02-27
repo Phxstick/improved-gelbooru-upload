@@ -188,20 +188,38 @@ export async function getImageFromUrl(url: string): Promise<File | null> {
 interface ToggleProps {
     label: string
     defaultValue: boolean
+    canToggle?: (value: boolean) => boolean | Promise<boolean>
     onChange?: (value: boolean) => void
 }
 
 export function createToggle(props: ToggleProps) {
-    let isChecked = false
     const element = E("div", { class: "ui toggle checkbox" }, [
         E("input", { type: "checkbox" }),
         E("label", {}, props.label)
     ])
     $(element).checkbox({
-        onChange: () => {
-            isChecked = $(element).checkbox("is checked")
-            if (props.onChange) props.onChange(isChecked)
-        }
+        beforeChecked: () => {
+            if (!props.canToggle) return
+            Promise.resolve(props.canToggle(true)).then((allowed) => {
+                if (!allowed) return
+                $(element).checkbox("set checked")
+                if (props.onChange) props.onChange(true)
+            })
+            return false
+        },
+        beforeUnchecked: () => {
+            if (!props.canToggle) return
+            Promise.resolve(props.canToggle(false)).then((allowed) => {
+                if (!allowed) return
+                $(element).checkbox("set unchecked")
+                if (props.onChange) props.onChange(false)
+            })
+            return false
+        },
+        // onChange: () => {
+        //     const isChecked = $(element).checkbox("is checked")
+        //     if (props.onChange) props.onChange(isChecked)
+        // }
     })
     if (props.defaultValue) {
         $(element).checkbox("set checked")

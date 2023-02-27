@@ -1,56 +1,14 @@
 import browser from "webextension-polyfill";
-import { Md5 } from "ts-md5/dist/md5"
-import { E } from "js/utility"
-import GelbooruApi from "js/gelbooru-api";
+import { Md5 } from "ts-md5";
+import { E } from "js/utility";
+import { BooruApi, HostName, StatusUpdate, Message } from "js/types";
 import "./file-upload.scss";
 
-interface IqdbSearchResult {
-    gelbooruUrl: string,
-    thumbnailUrl: string,
-    width: number,
-    height: number,
-    similarity: number
-}
-
-function parseIqdbSearchResults(doc: Document): IqdbSearchResult[] {
-    const matches: IqdbSearchResult[] = []
-    const pages = doc.querySelectorAll("#pages > div")
-    if (pages.length === 0) {
-        throw new Error("Search result is not valid.")
-    }
-    for (const page of pages) {
-        const rows = page.querySelectorAll("tr")
-        const head = rows[0].textContent!.trim().toLowerCase()
-        if (head === "your image" || head === "no relevant matches") continue
-        const link = rows[1].querySelector("a")!
-        const image = link.querySelector("img")!
-        let gelbooruUrl = link.getAttribute("href")!
-        let thumbnailUrl = image.getAttribute("src")!
-        if (gelbooruUrl[0] === "/" && gelbooruUrl[1] === "/") {
-            gelbooruUrl = "https:" + gelbooruUrl
-        }
-        if (thumbnailUrl[0] === "/") {
-            thumbnailUrl = "https://gelbooru.iqdb.org" + thumbnailUrl
-        }
-        const dimensions = rows[2].textContent!.split(" ")[0]
-        const [width, height] = dimensions.split("×").map(n => parseInt(n))
-        const similarity = parseInt(rows[3].textContent!.split("%")[0])
-        matches.push({
-            gelbooruUrl,
-            thumbnailUrl,
-            width,
-            height,
-            similarity
-        })
-    }
-    return matches
-}
-
-type FileUploadCallback = (objectUrl: string) => void
-type StatusCheckCallback = (matches: string[]) => void
+export type FileUploadCallback = (objectUrl: string) => void
+export type StatusCheckCallback = (matchIds: number[]) => void
 
 export interface CheckResult {
-    gelbooruIds?: string[],
+    posts?: { [key in HostName]?: { id: number }[] }
     error?: string
 }
 
@@ -67,7 +25,7 @@ export interface FileUpload {
     addStatusCheckListener: (callback: StatusCheckCallback) => void
 }
 
-export default function createImageUpload(sourceInput: HTMLInputElement, apiCredentials: GelbooruApi.Credentials): FileUpload {
+export default function createImageUpload(sourceInput: HTMLInputElement, api: BooruApi): FileUpload {
     let foundMd5Match = false
     let loadedUrl = ""
     let loadedPixivId = ""
@@ -125,14 +83,17 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
     const noFileErrorMessage = E("div", { class: "failure hidden no-file-error-message" },
         "The dropped data does not contain an image. If you drag an image from " +
         "a web page, make sure that it has fully loaded first.")
-    const accountSettingsLink = `<a target="_blank" href='https://gelbooru.com/index.php?page=account&s=options'>account settings</a>`
+    const settingsUrl = api.getSettingsUrl()
+    const accountSettingsLink = `<a target="_blank" href='${settingsUrl}'>account settings</a>`
     const extensionSettingsLink = `<a class="extension-settings-link">extension settings</a>`
     const noApiInfoSetMessage = E("div", { class: "info hidden no-api-info-message" },
-        "Cannot perform MD5 check or source check because Gelbooru user ID and/or API key " +
-        `are not provided. You can find those values in your ${accountSettingsLink} on Gelbooru ` +
-        `and set them in the ${extensionSettingsLink} to enable these checks.`)
+        "Cannot perform MD5 check or source check because the user ID and/or API key " +
+        `are not provided. You can find those values in your ${accountSettingsLink} ` +
+        `and enter them in the ${extensionSettingsLink} to enable these checks.`)
     noApiInfoSetMessage.querySelector(".extension-settings-link")!
-        .addEventListener("click", () => browser.runtime.sendMessage({ type: "open-extension-options" }))
+        .addEventListener("click", () => browser.runtime.sendMessage({
+            type: Message.OpenExtensionOptions
+        }))
 
     // Make it possible to drag&drop pictures (esp. from other webpages like Pixiv)
     fileInputWrapper.addEventListener("dragover", (event) => {
@@ -145,10 +106,14 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
             const urlParts = new URL(url)
             // Automatically fill in source URL if the given image is from pixiv
             if (urlParts.hostname === "i.pximg.net") {
-                const pathParts = urlParts.pathname.split("/")
-                const filename = pathParts[pathParts.length - 1]
-                const pixivId = filename.split("_")[0]
-                sourceInput.value = `https://www.pixiv.net/artworks/${pixivId}`
+                if (api.host === HostName.Danbooru) {
+                    sourceInput.value = url  // Danbooru wants the direct image URL
+                } else {
+                    const pathParts = urlParts.pathname.split("/")
+                    const filename = pathParts[pathParts.length - 1]
+                    const pixivId = filename.split("_")[0]
+                    sourceInput.value = `https://www.pixiv.net/artworks/${pixivId}`
+                }
             }
         }
         // Set input file to dragged one and trigger listeners of change event
@@ -223,20 +188,25 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         imageChecksContainer
     ])
 
-    const emitStatusUpdate = (gelbooruIds: string[]) => {
-        statusCheckListeners.forEach(listener => listener(gelbooruIds))
-        onCheckedResolve({ gelbooruIds })
-        if (!loadedPixivId) return
-        browser.runtime.sendMessage({
-            type: "notify-associated-extensions",
-            args: {
-                pixivIdToGelbooruIds: {
-                    [loadedPixivId]: gelbooruIds
-                },
-                filenameToGelbooruIds: fileInput.files ? {
-                    [fileInput.files[0].name]: gelbooruIds 
-                } : {}
+    const emitStatusUpdate = (postIds: number[]) => {
+        statusCheckListeners.forEach(listener => listener(postIds))
+        const postIdStrings = postIds.map(id => id.toString())
+        const data: CheckResult = {
+            posts: {
+                [api.host]: postIdStrings
             }
+        }
+        onCheckedResolve(data)
+        if (!loadedPixivId) return
+        const statusUpdate: StatusUpdate = {
+            host: api.host,
+            pixivId: loadedPixivId,
+            filename: fileInput.files![0].name,
+            postIds
+        }
+        browser.runtime.sendMessage({
+            type: Message.NotifyAssociatedExtensions,
+            args: statusUpdate
         })
     }
 
@@ -244,7 +214,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         const md5 = new Md5()
         md5.appendByteArray(new Uint8Array(arrayBuffer))
         const md5hash = md5.end()
-        const md5response = await GelbooruApi.query(["md5:" + md5hash], apiCredentials)
+        const md5response = await api.query(["md5:" + md5hash])
 
         // Display result of MD5 check
         noHashMatchesMessage.classList.toggle("hidden", md5response.length > 0)
@@ -252,13 +222,11 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         if (md5response.length > 0) {
             foundMd5Match = true
             hashMatchesContainer.innerHTML = ""
-            const postIds = md5response.map(post => post.id.toString())
+            const postIds = md5response.map(post => post.id)
             for (const postId of postIds) {
-                const postLink = E("a", {
-                    href: `https://gelbooru.com/index.php?page=post&s=view&id=${postId}`,
-                    target: "_blank"
-                }, postId)
-                hashMatchesContainer.appendChild(postLink)
+                const href = api.getPostUrl(postId)
+                const link = E("a", { href, target: "_blank" }, postId.toString())
+                hashMatchesContainer.appendChild(link)
             }
             emitStatusUpdate(postIds)
             return true
@@ -275,10 +243,10 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         searchingBySourceMessage.textContent = `Searching for posts with Pixiv ID ${pixivId}...`
         searchingBySourceMessage.classList.remove("hidden")
         let sourceQuery = `source:*pixiv*${pixivId}*`
-        let response = await GelbooruApi.query([sourceQuery], apiCredentials)
+        let response = await api.query([sourceQuery])
         if (response.length === 0) {
             sourceQuery = `source:*pximg*${pixivId}*`
-            response = await GelbooruApi.query([`source:*pximg*${pixivId}*`], apiCredentials)
+            response = await api.query([`source:*pximg*${pixivId}*`])
         }
         searchingBySourceMessage.classList.add("hidden")
 
@@ -292,23 +260,21 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         }
         const postInflection = response.length === 1 ? "post" : "posts"
         const postsLink = response.length === 1 ?
-            `https://gelbooru.com/index.php?page=post&s=view&id=${response[0].id}` :
-            `https://gelbooru.com/index.php?page=post&s=list&tags=${sourceQuery}`
+            api.getPostUrl(response[0].id) : api.getQueryUrl([sourceQuery])
         sourceMatchesHeader.innerHTML = `Found <a target="_blank" href="${postsLink}">`
             + `${response.length} ${postInflection}</a> matching Pixiv ID ${pixivId}`
         
         // List matching posts
         sourceMatchesContainer.innerHTML = ""
         for (const post of response) {
-            const postLink = `https://gelbooru.com/index.php?page=post&s=view&id=${post.id}`
-            const src = `https://img3.gelbooru.com/thumbnails/${post.directory}/thumbnail_${post.md5}.jpg`
-            const postElement = E("a", { class: "gelbooru-post", href: postLink, target: "_blank" }, [
-                E("img", { class: "small preview", src })
+            const href = api.getPostUrl(post.id)
+            const postElement = E("a", { class: "booru-post", href, target: "_blank" }, [
+                E("img", { class: "small preview", src: post.thumbnailUrl })
             ])
             sourceMatchesContainer.appendChild(postElement)
         }
         sourceMatchesContainer.classList.remove("hidden")
-        emitStatusUpdate(response.map(post => post.id.toString()))
+        emitStatusUpdate(response.map(post => post.id))
         return true
     }
 
@@ -323,63 +289,23 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         iqdbMatchesHeader.classList.add("hidden")
         iqdbMatchesWrapper.classList.remove("hidden")
 
-        // Query IQDB (via background page to circumvent CORS)
-        const response = await browser.runtime.sendMessage({
-            type: "query-gelbooru-iqdb",
-            args: {
-                fileUrl: objectUrl,
-                filename: file.name
-            }
+        const searchResult = await api.searchIqdb({
+            host: api.host,
+            fileUrl: objectUrl,
+            filename: file.name
         })
         searchingIqdbMessage.classList.add("hidden")
         iqdbMatchesHeader.classList.remove("hidden")
 
-        // Display error message if query response is not valid
-        if (!response.html) {
+        if (!searchResult.success) {
             iqdbMatchesHeader.classList.add("failure")
-            console.log("IQDB response status:", response.status)
-            let error
-            if (response.status === 413) {
-                error = "File is too large for IQDB request!"
-            } else {
-                error = "IQDB search request failed!"
-            }
-            iqdbMatchesHeader.textContent = error
-            onCheckedResolve({ error })
+            iqdbMatchesHeader.textContent = searchResult.error
+            onCheckedResolve({ error: searchResult.error })
             return
         }
+        const matches = searchResult.matches
 
-        // Check if query failed
-        const parser = new DOMParser()
-        const doc = parser.parseFromString(response.html, "text/html")
-        const errorMsg = doc.querySelector(".err")
-        if (errorMsg !== null) {
-            iqdbMatchesHeader.classList.add("failure")
-            console.log("IQDB error:", errorMsg.textContent)
-            let error
-            if (errorMsg.textContent!.includes("too large")) {
-                error = "File is too large for IQDB query (8192 KB max)."
-            } else if (errorMsg.textContent!.includes("format not supported")) {
-                error = "File format is not supported by IQDB."
-            } else {
-                error = "IQDB search request failed!"
-            }
-            iqdbMatchesHeader.textContent = error
-            onCheckedResolve({ error })
-            return
-        }
-
-        // Parse matches from response HTML and display search result
-        let matches: IqdbSearchResult[] = []
-        try {
-            matches = parseIqdbSearchResults(doc).filter(match => match.similarity > 80)
-        } catch (e) {
-            const error = "Failed to parse IQDB response."
-            iqdbMatchesHeader.innerHTML = error
-            iqdbMatchesHeader.classList.add("failure")
-            onCheckedResolve({ error })
-            return
-        }
+        // Display search result
         iqdbMatchesHeader.classList.toggle("success", matches.length === 0)
         iqdbMatchesHeader.classList.toggle("failure", matches.length > 0)
         if (matches.length === 0) {
@@ -393,37 +319,18 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         iqdbMatchesHeader.innerHTML =
             `Found ${matches.length} ${post_s} with ${a} similar ${image_s}:`
 
-        // List matches with highest similarity
+        // Show thumbnails of found matches
         iqdbMatchesContainer.innerHTML = ""
         for (const match of matches) {
-            const postElement = E("a", { class: "gelbooru-post", href: match.gelbooruUrl, target: "_blank" }, [
+            const postElement = E("a", { class: "booru-post", href: match.postUrl, target: "_blank" }, [
                 E("img", { class: "small preview", src: match.thumbnailUrl })
             ])
             iqdbMatchesContainer.appendChild(postElement)
         }
         iqdbMatchesContainer.classList.remove("hidden")
 
-        // Extract Gelbooru IDs. If some matches are referenced via MD5 hash, convert to ID.
-        const gelbooruIds: string[] = []
-        for (const match of matches) {
-            const url = new URL(match.gelbooruUrl)
-            if (url.searchParams.has("id")) {
-                gelbooruIds.push(url.searchParams.get("id")!)
-            } else if (url.searchParams.has("md5")) {
-                const md5 = url.searchParams.get("md5")!
-                const md5response = await GelbooruApi.query(["md5:" + md5], apiCredentials)
-                if (md5response.length === 0) {
-                    console.log(`WARNING: cannot find Gelbooru post for MD5 hash (${md5}).`)
-                } else {
-                    const gelbooruId = md5response[0].id.toString() 
-                    gelbooruIds.push(gelbooruId)
-                    console.log(`Converted MD5 hash to ID: ${md5} -> ${gelbooruId}`)
-                }
-            } else {
-                console.log(`WARNING: Gelbooru post contains neither ID nor MD5 (${match.gelbooruUrl})`)
-            }
-        }
-        emitStatusUpdate(gelbooruIds)
+        // Announce check result
+        emitStatusUpdate(matches.map(m => m.postId))
     }
 
     async function runChecks(file: File) {
@@ -437,8 +344,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, apiCred
         startIqdbSearch.classList.add("hidden")
         imageInfoContainer.classList.remove("hidden")
 
-        if (apiCredentials.userId && apiCredentials.apiKey) {
-            // Calculate MD5 and check if it already exists on Gelbooru
+        if (api.isAuthenticated()) {
+            // Calculate MD5 and check if it already exists
             const arrayBuffer = await file.arrayBuffer()
             let foundMatch
             try {

@@ -1,11 +1,11 @@
-import GelbooruApi from "js/gelbooru-api";
 import ContextMenu from "js/generic/context-menu";
 import TagSearch from "js/generic/tag-search";
+import { BooruApi, TagType, TagInfo } from "js/types";
 import { E } from "js/utility";
 import "./tag-inputs.scss"
 
 // Create a popup menu for choosing a different tag type
-function openTagTypePopup(tagElement: HTMLElement) {
+function openTagTypePopup(tagElement: HTMLElement, api: BooruApi) {
     const type = tagElement.dataset.type!
     const createMenuItem = (value: string, label: string) => 
         E("a", { class: "item" + (value === type ? " hidden" : ""), dataset: { value } }, label)
@@ -16,11 +16,17 @@ function openTagTypePopup(tagElement: HTMLElement) {
         createMenuItem("tag", "Regular")
     ])
     document.body.appendChild(tagTypeMenu)
-    tagTypeMenu.addEventListener("click", (event) => {
+    tagTypeMenu.addEventListener("click", async (event) => {
         const target = event.target as HTMLElement | null
         if (target === null) return
         if (target.parentElement !== tagTypeMenu) return
-        GelbooruApi.setTagType(tagElement, target.dataset.value as GelbooruApi.TagType)
+        const tagName = tagElement.dataset.value!.replaceAll(" ", "_")
+        const newType = target.dataset.value as TagType
+        const success = await api.setTagType(tagName, newType)
+        if (success) {
+            tagElement.dataset.type = newType
+            if (newType !== "tag") tagElement.classList.remove("rare")
+        }
     })
     let clicked = false
     const clickListener = () => {
@@ -56,7 +62,6 @@ interface TagInputOptions {
     separateTagsWithSpace: boolean
     postCountThreshold: number
     searchDelay: number
-    apiCredentials: GelbooruApi.Credentials
 }
 
 export default class TagInputs {
@@ -64,11 +69,13 @@ export default class TagInputs {
     private groupToTagInput = new Map<string, TagSearch>()
     private tagInputs: TagSearch[] = []
     private container = E("div", { class: "tag-inputs-container" })
+    private api: BooruApi
 
-    constructor(groupNames: string[], options: TagInputOptions) {
+    constructor(groupNames: string[], api: BooruApi, options: TagInputOptions) {
         for (const groupName of groupNames) {
             this.createInput(groupName, options)
         }
+        this.api = api
 
         // Keep track of selected tags
         let activeTags: HTMLElement[]
@@ -91,13 +98,12 @@ export default class TagInputs {
             // ----------------------------------------------------------------
 
             { title: "Set tag type", icon: "pencil", action: (tagElement) => {
-                openTagTypePopup(tagElement)
+                openTagTypePopup(tagElement, api)
             }, condition: singleTagSelected },
 
             { title: "Browse tag", icon: "th", action: (tagElement) => {
-                const value = tagElement.dataset.value!.replaceAll(" ", "_")
-                const baseUrl = "https://gelbooru.com/index.php?page=post&s=list&tags="
-                window.open(baseUrl + encodeURIComponent(value), "_blank")?.focus()
+                const tagName = tagElement.dataset.value!.replaceAll(" ", "_")
+                window.open(this.api.getQueryUrl([tagName]), "_blank")?.focus()
             }, condition: singleTagSelected },
 
             { title: "Copy tag", icon: "copy", action: (tagElement) => {
@@ -135,7 +141,7 @@ export default class TagInputs {
     }
 
     createInput(groupName: string, options: TagInputOptions) {
-        let lastResults: GelbooruApi.TagInfo[] | undefined
+        let lastResults: TagInfo[] | undefined
         const specialChars = /[-_~/!.:;+=|]/g
         const tagSearch = new TagSearch({
             multiSelect: true,
@@ -161,15 +167,7 @@ export default class TagInputs {
             getResults: async (query) => {
                 query = query.trim().toLowerCase().replaceAll(" ", "_")
                 query = query.replaceAll("\\", "\\\\")  // Replace backslash with double backslash
-                lastResults = await GelbooruApi.getTagCompletions(query)
-                // if (lastResults) {
-                //     // Some tags are emojis like >_<, use underscore instead of space in those cases
-                //     for (const result of lastResults) {
-                //         if (result.title.length === 3 && result.title[1] === " ") {
-                //             result.title = result.title[0] + "_" + result.title[2]
-                //         }
-                //     }
-                // }
+                lastResults = await this.api.getTagCompletions(query)
                 return lastResults || []
             },
             itemBuilder: (data: any) => {
@@ -184,7 +182,7 @@ export default class TagInputs {
                 completion.replaceAll(specialChars, " ").toLowerCase().startsWith(input.replaceAll(specialChars, " ")),
             onLabelCreate: async (label, tagName) => {
                 label.childNodes[0].textContent = tagName
-                let tagInfo: GelbooruApi.TagInfo | undefined
+                let tagInfo: TagInfo | undefined
 
                 // If tag is included in the last search completions, take data from there
                 if (lastResults) {
@@ -194,10 +192,9 @@ export default class TagInputs {
                     }
                 }
 
-                // Otherwise, request tag data via the Gelbooru API (if auth data is set)
-                const apiCred = options.apiCredentials
-                if (tagInfo === undefined && apiCred.apiKey && apiCred.userId) {
-                    tagInfo = await GelbooruApi.getTagInfo(tagName, apiCred)
+                // Otherwise, request tag data via the API (if authenticated)
+                if (tagInfo === undefined && this.api.isAuthenticated()) {
+                    tagInfo = await this.api.getTagInfo(tagName)
                 }
                 if (tagInfo === undefined) return
 
@@ -232,7 +229,7 @@ export default class TagInputs {
             tagSearch.getElement()
         ])
 
-        // Make it possible to paste a list of tags with the Gelbooru format
+        // Make it possible to paste a list of tags
         const innerSearchEntry = tagSearch.getElement().querySelector("input.search") as HTMLElement
         innerSearchEntry.addEventListener("paste", (event) => {
             if (!event.clipboardData) return null

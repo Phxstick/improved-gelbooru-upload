@@ -24,6 +24,9 @@ class SettingsManager {
         searchDelay: 80,
         apiKey: "",
         userId: "",
+        enableOnDanbooru: false,
+        danbooruApiKey: "",
+        danbooruUsername: ""
     }
 
     public static getDefinitions(): SettingsDefinition {
@@ -74,8 +77,52 @@ class SettingsManager {
             userId: {
                 type: "string",
                 text: "Gelbooru account ID"
+            },
+            enableOnDanbooru: {
+                type: "boolean",
+                text: "Enable the extension on Danbooru",
+                subSettings: ["danbooruApiKey", "danbooruUsername"],
+                action: async (enable) => {
+                    const danbooruIqdbUrl = "https://danbooru.iqdb.org/"
+                    if (enable) {
+                        const granted = await browser.permissions.request({
+                            "permissions": ["scripting"],
+                            "origins": [danbooruIqdbUrl]
+                        })
+                        if (!granted) return false
+                        await SettingsManager.enableDanbooruScript()
+                        return true
+                    } else {
+                        browser.scripting.unregisterContentScripts({
+                            ids: ["danbooru-script"]
+                        })
+                        await browser.permissions.remove({
+                            "permissions": ["scripting"],
+                            "origins": [danbooruIqdbUrl]
+                        })
+                        return true
+                    }
+                }
+            },
+            danbooruApiKey: {
+                type: "string",
+                text: "Danbooru API key"
+            },
+            danbooruUsername: {
+                type: "string",
+                text: "Danbooru username"
             }
         }
+    }
+
+    public static async enableDanbooruScript() {
+        const danbooruUrl = "https://danbooru.donmai.us/uploads/new"
+        console.log("Registering script.")
+        await browser.scripting.registerContentScripts([{
+            id: "danbooru-script",
+            matches: [danbooruUrl],
+            js: ["jquery.js", "contentScript.js"]
+        }])
     }
 
     private static getStorageKey(key: SettingKey): string {

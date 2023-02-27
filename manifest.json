@@ -1,23 +1,32 @@
 {
     "manifest_version": 3,
     "name": "Improved Gelbooru upload",
-    "version": "1.1.0",
+    "version": "1.2.0",
 
     "description": "Reconstruct the Gelbooru upload page with a bunch of useful features.",
 
     "permissions": [
         "storage"
     ],
+    "optional_permissions": [
+        "scripting"
+    ],
 
     "host_permissions": [
         "https://gelbooru.iqdb.org/",
         "https://danbooru.donmai.us/artists"
     ],
+    "optional_host_permissions": [
+        "https://danbooru.iqdb.org/"
+    ],
 
     "web_accessible_resources": [
         {
             "resources": ["*.woff2"],
-            "matches": ["https://gelbooru.com/*"]
+            "matches": [
+                "https://gelbooru.com/*",
+                "https://danbooru.donmai.us/*"
+            ]
         }
     ],
 
@@ -35,7 +44,7 @@
     "content_scripts": [
         {
             "matches": ["https://gelbooru.com/index.php?page=post&s=add"],
-            "js": ["jquery.js", "gelbooruUpload.js"]
+            "js": ["jquery.js", "contentScript.js"]
         }
     ]
 }

@@ -1,10 +1,9 @@
 import { E } from "js/utility"
-import { Settings } from "js/types"
+import { Settings, BooruApi, AuthError } from "js/types"
 import ContextMenu from "js/generic/context-menu"
 import Component from "js/generic/component"
 import Selection from "js/generic/selection"
-import GelbooruUploadInterface from "js/components/gelbooru-upload-interface"
-import GelbooruApi from "js/gelbooru-api"
+import UploadInterface from "js/components/upload-interface"
 import "./main-interface.scss"
 
 export enum TabStatus {
@@ -17,9 +16,10 @@ export enum TabStatus {
 }
 
 export default class MainInterface extends Component {
+    readonly api: BooruApi
     readonly settings: Settings
 
-    readonly tabToInstance = new WeakMap<HTMLElement, GelbooruUploadInterface>()
+    readonly tabToInstance = new WeakMap<HTMLElement, UploadInterface>()
     readonly tabToStatus = new WeakMap<HTMLElement, TabStatus>()
     readonly tabToStatusMessage = new WeakMap<HTMLElement, string>()
     readonly tabToScrollTop = new WeakMap<HTMLElement, number>()
@@ -35,8 +35,9 @@ export default class MainInterface extends Component {
     mainWrapper: HTMLElement
     uploadStatus: HTMLElement
 
-    constructor(settings: Settings) {
+    constructor(api: BooruApi, settings: Settings) {
         super()
+        this.api = api
         this.settings = settings
 
         const tabsContainer = E("div", { class: "tabs-container" })
@@ -126,17 +127,37 @@ export default class MainInterface extends Component {
 
             { title: "Upload to pool", icon: "", action: async () => {
                 const selectedTabs = [...tabSelection.get()]
-                const poolName = prompt("Enter a name for the pool")
+                const poolName = window.prompt("Enter a name for the pool")
                 if (!poolName) return
                 const promises = []
                 for (const tab of selectedTabs) {
                     promises.push(this.uploadTab(tab))
-                    await new Promise(resolve => setTimeout(resolve, 150))
+                    await new Promise(resolve => setTimeout(resolve, 250))
                 }
-                const gelbooruIds = await Promise.all(promises)
-                if (gelbooruIds.some(id => id === undefined)) return
-                const poolId = await GelbooruApi.createPool(poolName)
-                await GelbooruApi.addToPool(gelbooruIds as string[], poolId)
+                const postIds = await Promise.all(promises)
+                if (postIds.some(id => id === undefined)) return
+                let poolId: string
+                const authErrorMessage = "Not authenticated (you need to " +
+                    "set your API key and username in the extension settings)"
+                try {
+                    poolId = await this.api.createPool(poolName)
+                } catch (error) {
+                    if (error instanceof AuthError) {
+                        window.alert(authErrorMessage)
+                    } else {
+                        window.alert("Failed to create pool.")
+                    }
+                    return
+                }
+                try {
+                    await this.api.addToPool(postIds as number[], poolId)
+                } catch (error) {
+                    if (error instanceof AuthError) {
+                        window.alert(authErrorMessage)
+                    } else {
+                        window.alert("Failed to add posts to pool.")
+                    }
+                }
             }, condition: multipleTabsSelected }
         ])
         tabContextMenu.attachToMultiple(tabsContainer, ".tab", (e) => e)
@@ -221,7 +242,7 @@ export default class MainInterface extends Component {
         const imagePreview = E("img", { class: "small preview" }) as HTMLImageElement
         const statusContainer = E("div", { class: "tab-status" }, `Tab ${number}`)
         const tab = E("div", { class: "tab" }, [statusContainer, imagePreview])
-        const uploadInstance = new GelbooruUploadInterface(this.settings)
+        const uploadInstance = new UploadInterface(this.api, this.settings)
         this.tabToInstance.set(tab, uploadInstance)
         this.tabToScrollTop.set(tab, 0)
         this.setTabStatus(tab, TabStatus.Empty)
@@ -236,16 +257,16 @@ export default class MainInterface extends Component {
             this.setTabStatus(tab, TabStatus.Checking)
             uploadInstance.clearPixivTags()
         })
-        uploadInstance.addStatusCheckListener((matches) => {
+        uploadInstance.addStatusCheckListener((matchIds) => {
             const status = this.tabToStatus.get(tab)
             if (status !== TabStatus.Checking) return
             this.setTabStatus(tab, TabStatus.Checked)
-            if (matches.length === 0) {
+            if (matchIds.length === 0) {
                 statusContainer.textContent = `Checked ✔`
                 statusContainer.classList.add("success")
             } else {
-                statusContainer.textContent = matches.length === 1 ?
-                    `1 match` : `${matches.length} matches`
+                statusContainer.textContent = matchIds.length === 1 ?
+                    `1 match` : `${matchIds.length} matches`
                 statusContainer.classList.add("failure")
             }
         })
@@ -257,7 +278,7 @@ export default class MainInterface extends Component {
         return tab
     }
 
-    async uploadTab(tab: HTMLElement): Promise<string | undefined> {
+    async uploadTab(tab: HTMLElement): Promise<number | undefined> {
         const statusContainer = tab.querySelector(".tab-status")!
         const instance = this.tabToInstance.get(tab)!
         const error = instance.checkData() 
@@ -273,11 +294,11 @@ export default class MainInterface extends Component {
 
         const result = await instance.upload()
         if (result.successful) {
-            const postLink = `<a target="_blank" href="${result.url}">${result.gelbooruId}</a>`
+            const postLink = `<a target="_blank" href="${result.url}">${result.postId}</a>`
             statusContainer.classList.add("uploaded")
             statusContainer.innerHTML = "Uploaded!"
             this.setTabStatus(tab, TabStatus.UploadSuccess, "Upload successful! Created post with ID " + postLink)
-            return result.gelbooruId
+            return result.postId
         } else {
             statusContainer.classList.add("failure")
             statusContainer.innerHTML = "Upload failed"

@@ -5,6 +5,7 @@ import DropdownMenu from "js/generic/dropdown-menu";
 import { E } from "js/utility"
 import "./artist-search.scss"
 import { FileUpload } from "js/components/file-upload";
+import { Message } from "js/types";
 
 const RECENT_ARTISTS_KEY = "recentlySearchedArtists"
 
@@ -152,7 +153,7 @@ export default class ArtistSearch extends Component {
         let doc: Document
         try {
             const response = await browser.runtime.sendMessage({
-                type: "get-artist-tag",
+                type: Message.GetArtistTag,
                 args: { url }
             })
             const parser = new DOMParser()

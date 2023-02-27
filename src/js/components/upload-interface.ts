@@ -1,23 +1,13 @@
 import browser from "webextension-polyfill";
-import createImageUpload, { FileUpload, CheckResult } from "js/components/file-upload";
+import createImageUpload, { FileUpload, CheckResult, FileUploadCallback, StatusCheckCallback } from "js/components/file-upload";
 import TagInputs from "js/components/tag-inputs";
 import ArtistSearch from "js/components/artist-search"
 import RadioButtons from "js/generic/radiobuttons"
 import Component from "js/generic/component"
-import { Settings } from "js/types"
+import { Settings, BooruApi, UploadResult, StatusUpdate, Message } from "js/types"
 import { E } from "js/utility"
 
-interface UploadSuccess {
-    successful: false
-    error: string
-}
-interface UploadFailure {
-    successful: true
-    gelbooruId: string
-    url: string
-}
-
-export default class GelbooruUploadInterface extends Component {
+export default class UploadInterface extends Component {
     private sourceInput: HTMLInputElement
     private fileUpload: FileUpload
     private titleInput: HTMLInputElement
@@ -26,36 +16,36 @@ export default class GelbooruUploadInterface extends Component {
     private ratingSelection: RadioButtons
     private pixivTagsContainer: HTMLElement
     private uploading = false
+    private api: BooruApi
 
     private static id = 0
 
-    constructor(settings: Settings) {
+    constructor(api: BooruApi, settings: Settings) {
         super()
-        GelbooruUploadInterface.id++
+        this.api = api
+        UploadInterface.id++
 
-        const { apiKey, userId, autoSelectFirstCompletion, tagGroups,
-                hideTitleInput, separateTagsWithSpace, splitTagInputIntoGroups,
+        const { autoSelectFirstCompletion, tagGroups, hideTitleInput,
+                separateTagsWithSpace, splitTagInputIntoGroups,
                 minimumPostCount, searchDelay } = settings
         const tagGroupsList = splitTagInputIntoGroups ? tagGroups : ["Tags"]
-        const apiCredentials = { apiKey, userId }
 
         // Create main components
         this.sourceInput = E("input", { class: "styled-input source-input" }) as HTMLInputElement
-        this.fileUpload = createImageUpload(this.sourceInput, apiCredentials)
+        this.fileUpload = createImageUpload(this.sourceInput, api)
         this.titleInput = E("input", { class: "styled-input title-input"}) as HTMLInputElement
         this.pixivTagsContainer = E("div", { class: "pixiv-tags" })
-        this.tagInputs = new TagInputs(tagGroupsList, {
+        this.tagInputs = new TagInputs(tagGroupsList, api, {
             selectFirstResult: autoSelectFirstCompletion,
             postCountThreshold: minimumPostCount,
             separateTagsWithSpace,
-            searchDelay,
-            apiCredentials
+            searchDelay
         })
         this.artistSearch = new ArtistSearch(this.tagInputs.getFirst(), this.fileUpload)
         this.ratingSelection = new RadioButtons({
             // Name needs to be different across instances, otherwise all radiobuttons
             // will be associated with each other and only one will be globally active
-            name: "rating" + GelbooruUploadInterface.id.toString(),
+            name: "rating" + UploadInterface.id.toString(),
             values: ["e", "q", "s", "g"],
             defaultValue: "e",
             labels: {
@@ -105,60 +95,36 @@ export default class GelbooruUploadInterface extends Component {
         }
     }
 
-    async upload(): Promise<UploadFailure | UploadSuccess> {
+    async upload(): Promise<UploadResult> {
         if (this.uploading) return { successful: false, error: "Upload in progress."}
         const error = this.checkData()
         if (error) return { successful: false, error }
+
         this.uploading = true
-
-        const file = this.fileUpload.getFile()!
-        const tags = this.tagInputs.getTags()
-        const source = this.sourceInput.value.trim()
-
-        // Gather data in a form and submit it in a post request
-        const formData = new FormData()
-        formData.set("upload", file)
-        formData.set("source", source)
-        formData.set("title", this.titleInput.value.trim())
-        formData.set("tags", tags.join(" "))
-        formData.set("rating", this.ratingSelection.getValue())
-        formData.set("submit", "Upload")  // Not sure if this is needed
-        const response = await fetch("https://gelbooru.com/index.php?page=post&s=add", {
-            method: "POST",
-            body: formData
+        const result = await this.api.createPost({
+            file: this.fileUpload.getFile()!,
+            title: this.titleInput.value.trim(),
+            source: this.sourceInput.value.trim(),
+            tags: this.tagInputs.getTags(),
+            rating: this.ratingSelection.getValue()
         })
         this.uploading = false
 
-        // Handle response (302 = successful upload, 200 = unsuccessful)
-        let uploadError: string
-        if (response.redirected) {  // Can't read code 302 directly, check for redirection
-            const urlParts = new URL(response.url)
-            if (urlParts.searchParams.has("id")) {
-                const postId = urlParts.searchParams.get("id")!
-                // Notify associated extensions if an image from Pixiv has been uploaded
-                if (this.fileUpload.getPixivId()) {
-                    browser.runtime.sendMessage({
-                        type: "notify-associated-extensions",
-                        args: {
-                            pixivIdToGelbooruIds: {
-                                [this.fileUpload.getPixivId()]: [postId]
-                            },
-                            filenameToGelbooruIds: {
-                                [file.name]: [postId]
-                            }
-                        }
-                    })
-                }
-                return { successful: true, gelbooruId: postId, url: response.url }
-            } else {
-                uploadError = "Unexpected server response."
+        // Notify associated extensions if an image from Pixiv has been uploaded
+        if (result.successful && this.fileUpload.getPixivId()) {
+            const statusUpdate: StatusUpdate = {
+                host: this.api.host,
+                pixivId: this.fileUpload.getPixivId(),
+                filename: this.fileUpload.getFile()!.name,
+                postIds: [result.postId]
             }
-        } else if (response.status === 200) {
-            uploadError = "Upload failed. Please try again."
-        } else {
-            uploadError = "Unexpected server response."
+            browser.runtime.sendMessage({
+                type: Message.NotifyAssociatedExtensions,
+                args: statusUpdate
+            })
         }
-        return { successful: false, error: uploadError }
+
+        return result
     }
 
     reset() {
@@ -180,11 +146,11 @@ export default class GelbooruUploadInterface extends Component {
         return this.fileUpload.handleDropData(dropData)
     }
 
-    addFileUploadListener(onFileUpload: (objectUrl: string) => void) {
+    addFileUploadListener(onFileUpload: FileUploadCallback) {
         this.fileUpload.addFileUploadListener(onFileUpload)
     }
 
-    addStatusCheckListener(onStatusCheck: (matches: string[]) => void) {
+    addStatusCheckListener(onStatusCheck: StatusCheckCallback) {
         this.fileUpload.addStatusCheckListener(onStatusCheck)
     }
 

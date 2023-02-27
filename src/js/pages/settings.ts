@@ -52,6 +52,10 @@ window.onload = async () => {
             element = createToggle({
                 label: definition.text,
                 defaultValue: currentValue as boolean,
+                canToggle: (value) => {
+                    if (!definition.action) return true
+                    return definition.action(value)
+                },
                 onChange: (value) => {
                     SettingsManager.set(settingKey, value)
                     if (subSettings) toggleSubsettings(value)
