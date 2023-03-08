@@ -182,7 +182,7 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
         if (!api.isAuthenticated()) return {
             error: `API credentials are missing for host "${host}".`
         }
-        return { posts: await api.query(tags) }
+        return { posts: await api.searchPosts(tags) }
     }
     else if (request.type === "query-artist-database") {
         if (!request.args || !request.args.url) return {

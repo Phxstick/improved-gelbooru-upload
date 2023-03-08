@@ -11,6 +11,11 @@ import "fomantic-ui/dist/components/checkbox.min.js"
 import "fomantic-ui/dist/components/checkbox.min.css"
 import "fomantic-ui/dist/components/popup.min.js"
 import "fomantic-ui/dist/components/popup.min.css"
+import "fomantic-ui/dist/components/modal.min.js"
+import "fomantic-ui/dist/components/modal.min.css"
+import "fomantic-ui/dist/components/dimmer.min.js"
+import "fomantic-ui/dist/components/dimmer.min.css"
+import "fomantic-ui/dist/components/loader.min.css"
 
 import "fomantic-ui/dist/components/site.min.css"
 import "fomantic-ui/dist/components/button.min.css"
@@ -83,9 +88,12 @@ async function main() {
         throw new Error(`Unknown host ${host}.`)
     }
 
-    const mainInterface = new MainInterface(api, settings)
     // Body needs to be replaced on Danbooru to get rid of event listeners
     document.body = document.createElement("body")
+
+    // The interface has to be created AFTER replacing the body, because
+    // elements like modals will be appended to the body during initialization
+    const mainInterface = new MainInterface(api, settings)
     document.body.appendChild(mainInterface.getElement())
 
     browser.runtime.sendMessage({

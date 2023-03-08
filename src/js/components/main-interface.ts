@@ -125,7 +125,7 @@ export default class MainInterface extends Component {
                 return multipleTabsSelected(tab)
             } },
 
-            { title: "Upload to pool", icon: "", action: async () => {
+            { title: "Upload to pool", icon: "upload", action: async () => {
                 const selectedTabs = [...tabSelection.get()]
                 const poolName = window.prompt("Enter a name for the pool")
                 if (!poolName) return

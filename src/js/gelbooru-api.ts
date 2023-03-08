@@ -1,4 +1,5 @@
 import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult } from "js/types"
+import { wikiPageToHtml } from "js/utility"
 import IQDB from "js/iqdb-search"
 
 const origin = "https://gelbooru.com/"
@@ -132,17 +133,17 @@ export default class GelbooruApi implements BooruApi {
             "user_id": userId,
             "name": tagName
         })
-        let response
-        try {
-            response = await fetch(baseUrl + params.toString())
-        } catch (error) {
-            return
-        }
+        const response = await fetch(baseUrl + params.toString())
         const responseData = await response.json() as TagResponse
-        if (!responseData.tag || responseData.tag.length === 0)
-            return { title: tagName, type: "tag", postCount: 0 }
-        const { count, type, ambiguous } = responseData.tag[0]
-        return { title: tagName, type: numberToTagType[type], postCount: count, ambiguous: ambiguous !== 0 }
+        if (!responseData.tag || responseData.tag.length === 0) return
+        const { id, name, count, type, ambiguous } = responseData.tag[0]
+        return {
+            id,
+            title: name,
+            type: numberToTagType[type],
+            postCount: count,
+            ambiguous: ambiguous !== 0
+        }
     }
 
     async getTagCompletions(query: string): Promise<TagInfo[] | undefined> {
@@ -176,21 +177,25 @@ export default class GelbooruApi implements BooruApi {
         formData.set("tag", tagName)
         formData.set("type", type)
         formData.set("commit", "Save")  // Not sure if this is needed
-        const response = await fetch(baseUrl + params.toString(), {
-            method: "POST",
-            body: formData
-        })
-        return response.ok
+        try {
+            const response = await fetch(baseUrl + params.toString(), {
+                method: "POST",
+                body: formData
+            })
+            return response.ok
+        } catch (error) {
+            return false
+        }
     }
 
-    // Keep this method for compatibility with associated extensions
-    async queryRaw(tags: string[]): Promise<RawPost[]> {
+    async searchPostsRaw(tags: string[], limit?: number): Promise<RawPost[]> {
         if (!this.credentials) throw new AuthError()
         const { userId, apiKey } = this.credentials
         const fullResults = []
         let pid = 0
-        let count = Infinity
-        while (100 * pid < count) {
+        const pageSize = 100
+        if (!limit) limit = Infinity
+        while (pageSize * pid < limit) {
             const params = new URLSearchParams({
                 "page": "dapi",
                 "s": "post",
@@ -199,21 +204,23 @@ export default class GelbooruApi implements BooruApi {
                 "user_id": userId,
                 "json": "1",
                 "pid": pid.toString(),
-                "tags": tags.join(" ")
+                "tags": tags.join(" "),
+                "limit": Math.min(limit, pageSize).toString()
             })
             const response = await fetch(baseUrl + params.toString())
             const data = await response.json() as QueryResponse
             if (data.post === undefined) return []
             const results = Array.isArray(data.post) ? data.post : [data.post]
             fullResults.push(...results)
-            count = parseInt(data["@attributes"].count)
+            if (results.length === 0) break
+            limit = Math.min(limit, parseInt(data["@attributes"].count))
             pid += 1
         }
         return fullResults
     }
 
-    async query(tags: string[]): Promise<BooruPost[]> {
-        const rawPosts = await this.queryRaw(tags)
+    async searchPosts(tags: string[], limit?: number): Promise<BooruPost[]> {
+        const rawPosts = await this.searchPostsRaw(tags, limit)
         return rawPosts.map(post => ({
             id: typeof post.id === "number" ? post.id : parseInt(post.id),
             md5: post.md5,
@@ -228,7 +235,7 @@ export default class GelbooruApi implements BooruApi {
             return parseInt(urlParts.searchParams.get("id")!)
         if (urlParts.searchParams.has("md5")) {
             const md5 = urlParts.searchParams.get("md5")!
-            const md5response = await this.query(["md5:" + md5])
+            const md5response = await this.searchPosts(["md5:" + md5])
             if (md5response.length === 0) {
                 console.log(`WARNING: cannot find post for MD5 hash (${url}).`)
                 return -1
@@ -248,8 +255,57 @@ export default class GelbooruApi implements BooruApi {
         return { success: true, matches: result.matches }
     }
 
+    private async searchWiki(query: string): Promise<{ id: number, name?: string }[]> {
+        const formData = new FormData()
+        formData.set("search", query)
+        formData.set("commit", "Search")
+        const params = new URLSearchParams({ "page": "wiki", "s": "list" })
+        const response = await fetch(baseUrl + params.toString(), {
+            method: "POST",
+            body: formData
+        })
+        if (response.redirected) {
+            const url = new URL(response.url)
+            if (url.searchParams.has("id")) {
+                return [{ id: parseInt(url.searchParams.get("id")!) }]
+            } else if (url.searchParams.get("s")! === "create") {
+                return []
+            }
+        }
+        const html = await response.text()
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(html, "text/html")
+        const linkElements = doc.querySelectorAll(
+            "table td:not(:first-child) a[href^='index.php?page=wiki&s=view'")
+        return [...linkElements].map(element => {
+            const url = new URL((element as HTMLAnchorElement).href)
+            return {
+                name: element.textContent!,
+                id: parseInt(url.searchParams.get("id")!)
+            }
+        })
+    }
+
     async getWikiPage(tagName: string): Promise<string | null> {
-        return null
+        tagName = tagName.replaceAll(" ", "_")
+        const searchResults = await this.searchWiki(tagName)
+        if (searchResults.length === 0) return null
+        const match = searchResults.length === 1 && !searchResults[0].name ?
+            searchResults[0] : searchResults.find(entry => entry.name === tagName)
+        if (!match) return null
+        const params = new URLSearchParams({
+            "page": "wiki",
+            "s": "edit",
+            "id": match.id.toString()
+        })
+        const response = await fetch(baseUrl + params.toString())
+        const html = await response.text()
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(html, "text/html")!
+        const page = doc.querySelector("textarea")!.textContent!
+        return wikiPageToHtml(page, {
+            separator: "\n"
+        })
     }
 
     async createPost(data: UploadData): Promise<UploadResult> {

@@ -80,7 +80,8 @@
     margin-right: 12px;
   }
   img {
-    outline: 1px solid mediumpurple;
+    // outline: 1px solid mediumpurple;
+    outline: 1px solid #ccc;
     border-radius: 3px;
   }
 }
@@ -144,6 +145,41 @@ input:focus {
 
 .extension-settings-link {
   cursor: pointer;
+}
+
+a {
+  cursor: pointer;
+}
+
+.recent-posts-wrapper {
+  padding: 1px;  // To prevent cutting off outline of thumbnails
+  white-space: nowrap;
+  overflow: hidden;
+  position: relative;
+  margin-right: -4px;
+
+  .recent-posts {
+    padding-right: 10px;
+  }
+
+  .header {
+    display: flex;
+    flex-direction: row;
+
+    a {
+      margin-left: 10px;
+    }
+  }
+
+  &:after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    content: "";
+    width: 10px;
+    background: linear-gradient(to left, white, 60%, transparent);
+  }
 }
 
 // ============================================================================
@@ -258,4 +294,41 @@ i.icon {
   border-radius: 4px;
   border: 1px solid #e0e0e0;
   color: #555;
+}
+
+.ui.modal > .content {
+  width: unset;
+  font-size: 1.05rem;
+  max-height: 75vh;
+  overflow: auto;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.ui.dimmer {
+  background: rgba(0,0,0,.5);
+}
+
+.ui.loader.shadowed {
+  &:before {
+    box-shadow: inset 0 0 15px #666;
+  }
+  &:after {
+    box-shadow: 0 0 15px #666;
+  }
+  text-shadow: 0 0 10px #333;
+}
+
+p {
+  margin-bottom: 10px;
+}
+
+h4 {
+  margin-top: 14px;
+  margin-bottom: 10px;
+}
+
+ul {
+  margin-top: 10px;
+  margin-bottom: 10px;
 }

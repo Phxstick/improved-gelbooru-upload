@@ -1,5 +1,6 @@
 import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult } from "js/types"
 import IQDB from "js/iqdb-search"
+import { wikiPageToHtml } from "js/utility"
 
 const origin = "https://danbooru.donmai.us"
 
@@ -107,7 +108,6 @@ export default class DanbooruApi implements BooruApi {
 
     isAuthenticated(): boolean {
         return this.credentials !== undefined || !!this.csrfToken
-        // return true  // Can use cookies if the user is logged in
     }
 
     getQueryUrl(tags: string[]): string {
@@ -131,28 +131,23 @@ export default class DanbooruApi implements BooruApi {
         const params = new URLSearchParams({
             "search[name]": tagName.replaceAll(" ", "_")
         })
-        try {
-            const url = origin + "/tags.json?" + params.toString()
-            const response = await fetch(url, {
-                credentials: "same-origin",  // Send cookies instead of API key
-            })
-            const responseData = await response.json() as RawTagInfo[]
-            if (responseData.length === 0) return null
-            return responseData[0]
-        } catch (error) {
-            return null
-        }
+        const url = origin + "/tags.json?" + params.toString()
+        const response = await fetch(url, {
+            credentials: "same-origin",  // Send cookies instead of API key
+        })
+        const responseData = await response.json() as RawTagInfo[]
+        if (responseData.length === 0) return null
+        return responseData[0]
     }
 
     async getTagInfo(tagName: string): Promise<TagInfo | undefined> {
         const rawTagInfo = await this.getRawTagInfo(tagName)
-        if (rawTagInfo === null) {
-            return { title: tagName.replaceAll(" ", "_"), type: "tag", postCount: 0 }
-        }
-        const { name, post_count, category } = rawTagInfo
+        if (rawTagInfo === null) return
+        const { id, name, post_count, category, is_deprecated } = rawTagInfo
         return {
+            id,
             title: name,
-            type: numberToTagType[category],
+            type: is_deprecated ? "deprecated" : numberToTagType[category],
             postCount: post_count
         }
     }
@@ -177,21 +172,25 @@ export default class DanbooruApi implements BooruApi {
         }
         if (!response.ok) return []
         const responseData = await response.json() as RawTagCompletion[]
-        return responseData.map(({ category, label, post_count }) =>
-            ({ type: numberToTagType[category], title: label, postCount: post_count }))
+        return responseData.map(({ category, label, post_count, antecedent }) => ({
+            type: numberToTagType[category],
+            title: label,
+            postCount: post_count,
+            synonyms: antecedent ? [antecedent] : []
+        }))
     }
 
     async setTagType(tagName: string, tagType: TagType): Promise<boolean> {
         if (!this.credentials) return false
         const { username, apiKey } = this.credentials
-        const rawTagInfo = await this.getRawTagInfo(tagName)
-        if (rawTagInfo === null) return false
-        const tagId = rawTagInfo.id
-        const authParams = new URLSearchParams({
-            "login": username,
-            "api_key": apiKey,
-        })
         try {
+            const rawTagInfo = await this.getRawTagInfo(tagName)
+            if (rawTagInfo === null) return false
+            const tagId = rawTagInfo.id
+            const authParams = new URLSearchParams({
+                "login": username,
+                "api_key": apiKey,
+            })
             const url = `${origin}/tags/${tagId}.json?${authParams.toString()}`
             const response = await fetch(url, {
                 method: "PUT",
@@ -210,12 +209,12 @@ export default class DanbooruApi implements BooruApi {
         }
     }
 
-    async query(tags: string[]): Promise<BooruPost[]> {
+    async searchPosts(tags: string[], limit?: number): Promise<BooruPost[]> {
         const fullResults = []
         let pid = 0
-        const pageSize = 100
-        const maxLimit = 1000
-        while (pageSize * pid < maxLimit) {
+        if (!limit) limit = 1000
+        const pageSize = Math.min(100, limit)
+        while (pageSize * pid < limit) {
             const params = new URLSearchParams({
                 "format": "json",
                 "post[tags]": tags.join(" "),
@@ -263,41 +262,9 @@ export default class DanbooruApi implements BooruApi {
         })
         const pages = await response.json() as WikiPage[]
         if (pages.length === 0) return null
-
-        // Convert the markdown-like wiki page to HTML
-        const parts = pages[0].body.split("\n\n")
-        const convertedParts = []
-        let parsingList = false
-        for (let part of parts) {
-            // Replace references of the form "[[tag_name|alt]]" with <a> elements
-            part = part.replaceAll(/\[\[([^\]]*)\]\]/g, (_, text) =>
-                `<a class="wiki-link">${text.split("|")[0]}</a>`)
-
-            // Handle lists
-            if (part.startsWith("* ")) {
-                if (!parsingList) {
-                    convertedParts.push("<ul>")
-                    parsingList = true
-                }
-                convertedParts.push(`<li>${part.slice(2)}</li>`)
-                continue
-            } else if (parsingList) {
-                convertedParts.push("</ul>")
-            }
-
-            // Handle headers
-            const headerMatch = part.match(/^h(\d)\. /)
-            if (headerMatch) {
-                const level = headerMatch[1]
-                convertedParts.push(`<h${level}>${part.slice(4)}</h${level}>`)
-                continue
-            }
-
-            // In all other cases, assume that the part is just text
-            convertedParts.push(`<div>${part}</div>`)
-        }
-        if (parsingList) convertedParts.push("</ul>")
-        return parts.join("")
+        return wikiPageToHtml(pages[0].body, {
+            separator: "\r\n"
+        })
     }
 
     async createPostUsingApi(data: UploadData): Promise<UploadResult> {
@@ -348,7 +315,13 @@ export default class DanbooruApi implements BooruApi {
             })
         })
         if (!postResponse.ok) {
-            const error = `Failed to create post (status code ${postResponse.status})`
+            let details
+            if (postResponse.status === 422) {
+                details = "upload limit reached"
+            } else {
+                details = `status code ${postResponse.status}`
+            }
+            const error = `Failed to create post (${details})`
             return { successful: false, error }
         }
         const postResponseObject = await postResponse.json() as RawPost

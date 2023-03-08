@@ -2,12 +2,12 @@ import Component from "js/generic/component";
 import { E } from "js/utility";
 import "./tag-search.scss"
 
-interface SearchCompletionData {
+interface BaseCompletion {
     title: string,
     value?: string
 }
 
-interface Props {
+interface Props<Completion> {
     multiSelect: boolean,
     allowAdditions: boolean,
     selectFirstResult: boolean,
@@ -17,27 +17,27 @@ interface Props {
     
     maxResults: number,
     searchDelay: number,
-    // values: SearchCompletionData[]
+    // values: Completion[]
 
-    getResults?: (query: string) => Promise<{ title: string }[]>,
+    getResults?: (query: string) => Promise<Completion[]>,
     getViewBoundaries?: () => ({ top: number, bottom: number }),
     onLabelCreate: (element: HTMLElement, value: string, text: string) => void,
     onAdd: (value: string) => void,
     onRemove: (value: string) => void,
     onChange: (value: string) => void,
-    getCompletions: (query: string) => SearchCompletionData[] | null,
+    getCompletions: (query: string) => Completion[] | null,
     validateAddition: (value: string) => boolean,
     transformInput: (value: string) => string,
-    checkMatch: (input: string, completion: string) => boolean,
-    itemBuilder?: (data: SearchCompletionData) => string
+    checkMatch: (input: string, completion: Completion) => boolean,
+    itemBuilder?: (data: Completion) => string
 }
 
-type TagSearchProps = Partial<Props>
+type TagSearchProps<Completion> = Partial<Props<Completion>>
 
 let templateCounter = 0
 
-export default class TagSearch extends Component {
-    private props: Props = {
+export default class TagSearch<Completion extends BaseCompletion> extends Component {
+    private props: Props<Completion> = {
         multiSelect: true,
         allowAdditions: true,
         selectFirstResult: true,
@@ -54,17 +54,24 @@ export default class TagSearch extends Component {
         getCompletions: () => null,
         validateAddition: () => true,
         transformInput: (value) => value,
-        checkMatch: (input, completion) => completion.startsWith(input)
+        checkMatch: (input, completion) => completion.title.startsWith(input)
     }
 
     private dropdown: HTMLElement
+    private inputElement: HTMLInputElement
     private clickListener?: (event: MouseEvent) => void
     private currentValue: string = "" // Last value in single-select mode
     private listenersDisabled = false
     private reverse = false
     private nextTagType?: string
+    private artistBanned?: boolean
 
-    constructor(props: TagSearchProps = {}) {
+    // State variables
+    private resultIndex = 0
+    private selectionRemoved = false
+    private currentResults: Completion[] = []
+
+    constructor(props: TagSearchProps<Completion> = {}) {
         super()
         Object.assign(this.props, props)
 
@@ -99,6 +106,10 @@ export default class TagSearch extends Component {
                     this[0].dataset.type = outerThis.nextTagType
                     outerThis.nextTagType = undefined
                 }
+                if (outerThis.artistBanned) {
+                    this[0].dataset.banned = "true"
+                    outerThis.artistBanned = undefined
+                }
                 return this
             },
             // Listeners for multi-select type
@@ -132,13 +143,9 @@ export default class TagSearch extends Component {
                 if (value) this.props.onAdd(value)
             }
         })
-        const innerSearchEntry = this.dropdown.querySelector("input.search") as HTMLInputElement
-        innerSearchEntry.classList.add("prompt")
-
-        // State variables
-        let resultIndex = 0
-        let selectionRemoved = false
-        let currentResults: { title: string, id: number }[]
+        this.inputElement =
+            this.dropdown.querySelector("input.search") as HTMLInputElement
+        this.inputElement.classList.add("prompt")
 
         // Custom search results
         const searchTemplates = window.$.fn.search.settings.templates as any
@@ -146,7 +153,7 @@ export default class TagSearch extends Component {
         if (this.props.itemBuilder) {
             templateCounter++
             const itemBuilder = this.props.itemBuilder
-            searchTemplates[templateName] = (data: { results: SearchCompletionData[] }) => {
+            searchTemplates[templateName] = (data: { results: Completion[] }) => {
                 const htmlArray: string[] = []
                 for (const searchCompletionData of data.results) {
                     htmlArray.push(itemBuilder(searchCompletionData))
@@ -167,15 +174,15 @@ export default class TagSearch extends Component {
             showNoResults: false,
             type: this.props.itemBuilder ? templateName : undefined,
 
-            onSelect: (data: SearchCompletionData) => {
+            onSelect: (data: Completion) => {
                 // Prevent default action when pressing enter, use custom handler below
                 return false as any
             },
 
             onSearchQuery: (query) => {
                 // Reset state of selection window
-                resultIndex = 0
-                selectionRemoved = !this.props.selectFirstResult
+                this.resultIndex = 0
+                this.selectionRemoved = !this.props.selectFirstResult
                 // Update search completions based on query
                 const completionData = this.props.getCompletions(query)
                 if (completionData === null) return
@@ -183,12 +190,12 @@ export default class TagSearch extends Component {
             },
 
             onResults: (response) => {
-                currentResults = response.results
+                this.currentResults = response.results
             },
 
             onResultsAdd: (html) => {
                 // Don't show results if user already selected a value during a search
-                resultsContainer.innerHTML = innerSearchEntry.value.length ? html : ""
+                resultsContainer.innerHTML = this.inputElement.value.length ? html : ""
                 if (resultsContainer.children.length) {
                     if (this.props.selectFirstResult) {
                         resultsContainer.children[0].classList.add("active")
@@ -252,7 +259,7 @@ export default class TagSearch extends Component {
         }
 
         // Simulate multi-select dropdown functionality using manual listener
-        innerSearchEntry.addEventListener("keydown", (event) => {
+        this.inputElement.addEventListener("keydown", (event) => {
             if (event.key !== "Enter" && event.key !== this.props.delimiter) return
 
             // Hide popup window
@@ -263,10 +270,11 @@ export default class TagSearch extends Component {
             }
 
             // Add selected value to the tag list
-            let inputText = this.props.transformInput(innerSearchEntry.value)
-            if (!selectionRemoved && resultsContainer.children.length > 0 &&
-                    (inputText.includes("*") || this.props.checkMatch(inputText, currentResults[resultIndex].title))) {
-                const value = currentResults[resultIndex].title
+            let inputText = this.props.transformInput(this.inputElement.value)
+            if (!this.selectionRemoved && resultsContainer.children.length > 0 &&
+                    (inputText.includes("*") || this.props.checkMatch(
+                        inputText, this.currentResults[this.resultIndex]))) {
+                const value = this.currentResults[this.resultIndex].title
                 if (this.props.validateAddition(value)) {
                     $(this.dropdown).dropdown("set selected", [value])
                 }
@@ -279,23 +287,23 @@ export default class TagSearch extends Component {
             }
 
             // Reset value of entry and keep it focussed
-            innerSearchEntry.value = ""
-            innerSearchEntry.focus()
+            this.inputElement.value = ""
+            this.inputElement.focus()
         })
 
-        innerSearchEntry.addEventListener("input", () => {
+        this.inputElement.addEventListener("input", () => {
             // Hide search completions if query is empty
-            if (innerSearchEntry.value.length === 0) {
+            if (this.inputElement.value.length === 0) {
                 resultsContainer.style.display = "none"
                 resultsContainer.classList.remove("above")
                 this.reverse = false
             }
         })
 
-        innerSearchEntry.addEventListener("keydown", (event) => {
+        this.inputElement.addEventListener("keydown", (event) => {
             // If escape is pressed, clear the input so that nothing gets added
             if (event.key === "Escape") {
-                innerSearchEntry.value = ""
+                this.inputElement.value = ""
                 resultsContainer.style.display = "none"
                 resultsContainer.classList.remove("above")
                 this.reverse = false
@@ -305,7 +313,7 @@ export default class TagSearch extends Component {
 
             // If focus goes somewhere else by pressing tab, hide suggestions
             if (event.key === "Tab") {
-                innerSearchEntry.value = ""
+                this.inputElement.value = ""
                 resultsContainer.style.display = "none"
                 resultsContainer.classList.remove("above")
                 this.reverse = false
@@ -319,15 +327,15 @@ export default class TagSearch extends Component {
                 if (!resultsContainer.children.length) return
                 event.stopImmediatePropagation()
                 event.preventDefault()
-                if (selectionRemoved) return
-                if (resultIndex === 0) {
+                if (this.selectionRemoved) return
+                if (this.resultIndex === 0) {
                     // Allow not selecting anything to make a custom addition
-                    selectionRemoved = true
+                    this.selectionRemoved = true
                     resultsContainer.children[0].classList.remove("active")
                 } else {
-                    resultsContainer.children[resultIndex].classList.remove("active")
-                    resultIndex--
-                    resultsContainer.children[resultIndex].classList.add("active")
+                    resultsContainer.children[this.resultIndex].classList.remove("active")
+                    this.resultIndex--
+                    resultsContainer.children[this.resultIndex].classList.add("active")
                 }
             }
             if ((!this.reverse && event.key === "ArrowDown")
@@ -336,20 +344,20 @@ export default class TagSearch extends Component {
                 if (!resultsContainer.children.length) return
                 event.stopImmediatePropagation()
                 event.preventDefault()
-                if (selectionRemoved) {
-                    selectionRemoved = false
+                if (this.selectionRemoved) {
+                    this.selectionRemoved = false
                     resultsContainer.children[0].classList.add("active")
-                } else if (resultIndex !== resultsContainer.children.length - 1) {
-                    resultsContainer.children[resultIndex].classList.remove("active")
-                    resultIndex++
-                    resultsContainer.children[resultIndex].classList.add("active")
+                } else if (this.resultIndex !== resultsContainer.children.length - 1) {
+                    resultsContainer.children[this.resultIndex].classList.remove("active")
+                    this.resultIndex++
+                    resultsContainer.children[this.resultIndex].classList.add("active")
                 }
             }
         })
 
         // NOTE: not sure if this listener is still necessary, can't harm either
-        innerSearchEntry.addEventListener("focusout", (event) => {
-            selectionRemoved = !this.props.selectFirstResult
+        this.inputElement.addEventListener("focusout", (event) => {
+            this.selectionRemoved = !this.props.selectFirstResult
         })
 
         this.clickListener = (event: MouseEvent) => {
@@ -369,7 +377,7 @@ export default class TagSearch extends Component {
                 }
                 // Select clicked suggestion and hide popup window
                 const index = Array.from(resultsContainer.children).indexOf(element)
-                const value = currentResults[index].title
+                const value = this.currentResults[index].title
                 if (this.props.validateAddition(value)) {
                     $(this.dropdown).dropdown("set selected", [value])
                 }
@@ -377,15 +385,16 @@ export default class TagSearch extends Component {
                 resultsContainer.classList.remove("above")
                 this.reverse = false
                 // Keep entry focussed
-                // innerSearchEntry.focus()
+                // this.inputElement.focus()
             }
         }
         window.addEventListener("mousedown", this.clickListener)
     }
 
-    addSelected(value: string, type?: string, triggerListeners=true) {
+    addSelected(value: string, type?: string, isBanned?: boolean, triggerListeners=true) {
         if (!triggerListeners) this.listenersDisabled = true
         if (type) this.nextTagType = type
+        if (isBanned) this.artistBanned = true
         $(this.dropdown).dropdown("set selected", [value])
         if (!triggerListeners) this.listenersDisabled = false
     }
@@ -415,15 +424,24 @@ export default class TagSearch extends Component {
         return value.length ? value.split(this.props.delimiter) : []
     }
 
+    getHoveredCompletion(): Completion | null {
+        return !this.selectionRemoved && this.currentResults.length > 0 ?
+            this.currentResults[this.resultIndex] : null
+    }
+
+    getCurrentInput(): string {
+        return this.props.transformInput(this.inputElement.value)
+    }
+
     clear() {
         $(this.dropdown).dropdown("clear")
     }
 
     focus() {
-        (this.dropdown.querySelector("input.search") as HTMLInputElement).focus()
+        this.inputElement.focus()
     }
 
-    setCompletions(dataList: SearchCompletionData[]) {
+    setCompletions(dataList: Completion[]) {
         $(this.dropdown).search("setting", "source", dataList)
     }
 

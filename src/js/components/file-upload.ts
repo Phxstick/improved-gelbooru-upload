@@ -214,7 +214,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         const md5 = new Md5()
         md5.appendByteArray(new Uint8Array(arrayBuffer))
         const md5hash = md5.end()
-        const md5response = await api.query(["md5:" + md5hash])
+        const md5response = await api.searchPosts(["md5:" + md5hash])
 
         // Display result of MD5 check
         noHashMatchesMessage.classList.toggle("hidden", md5response.length > 0)
@@ -243,10 +243,10 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         searchingBySourceMessage.textContent = `Searching for posts with Pixiv ID ${pixivId}...`
         searchingBySourceMessage.classList.remove("hidden")
         let sourceQuery = `source:*pixiv*${pixivId}*`
-        let response = await api.query([sourceQuery])
+        let response = await api.searchPosts([sourceQuery])
         if (response.length === 0) {
             sourceQuery = `source:*pximg*${pixivId}*`
-            response = await api.query([`source:*pximg*${pixivId}*`])
+            response = await api.searchPosts([`source:*pximg*${pixivId}*`])
         }
         searchingBySourceMessage.classList.add("hidden")
 

@@ -5,18 +5,18 @@ import DropdownMenu from "js/generic/dropdown-menu";
 import { E } from "js/utility"
 import "./artist-search.scss"
 import { FileUpload } from "js/components/file-upload";
-import { Message } from "js/types";
+import { Message, TagInfo } from "js/types";
 
 const RECENT_ARTISTS_KEY = "recentlySearchedArtists"
 
 export default class ArtistSearch extends Component {
-    private tagInput: TagSearch
+    private tagInput: TagSearch<TagInfo>
     private searchField: HTMLInputElement
     private recentlySearchedArtists: DropdownMenu
     private searching: boolean
     private quickSearchPossible: boolean
 
-    constructor(tagInput: TagSearch, fileUpload: FileUpload) {
+    constructor(tagInput: TagSearch<TagInfo>, fileUpload: FileUpload) {
         super()
         this.searching = false
         this.quickSearchPossible = false
@@ -174,11 +174,18 @@ export default class ArtistSearch extends Component {
             this.searching = false
             return false
         }
-        const tagNames = rows.map(row =>
-            row.querySelector("td.name-column a")!.textContent!.replaceAll("_", " "))
+        const tags = rows.map(row => {
+            const nameCol = row.querySelector("td.name-column a")!
+            const statusCol = row.querySelector("td.status-column a")
+            return {
+                name: nameCol.textContent!.replaceAll("_", " "),
+                isBanned: statusCol ? statusCol.textContent === "Banned" : false
+            }
+        })
+        const tagNames = tags.map(tag => tag.name)
 
         // Insert artist tags into the first tag input, update status message
-        tagNames.forEach(tagName => this.tagInput.addSelected(tagName, "artist"))
+        tags.forEach(tag => this.tagInput.addSelected(tag.name, "artist", tag.isBanned))
         const tag_s = tagNames.length === 1 ? "tag" : "tags"
         this.setStatus(`Found following ${tag_s}: ` + tagNames.join(", "), "success")
         

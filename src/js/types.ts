@@ -30,10 +30,12 @@ export type SettingsDefinition = {
 export type TagType = "artist" | "character" | "copyright" | "metadata" | "tag" | "deprecated"
 
 export interface TagInfo {
+    id?: number,
     title: string,
     type: TagType,
     postCount: number,
     ambiguous?: boolean
+    synonyms?: string[]
 }
 
 export interface BooruPost {
@@ -99,7 +101,7 @@ export interface BooruApi {
     getTagInfo(tagName: string): Promise<TagInfo | undefined>
     getTagCompletions(query: string): Promise<TagInfo[] | undefined>
     setTagType(tagName: string, type: TagType): Promise<boolean>
-    query(tags: string[]): Promise<BooruPost[]>
+    searchPosts(tags: string[], limit?: number): Promise<BooruPost[]>
     searchIqdb(params: IqdbSearchParams): Promise<IqdbSearchResult>
     getWikiPage(tagName: string): Promise<string | null>
     createPost(data: UploadData): Promise<UploadResult>

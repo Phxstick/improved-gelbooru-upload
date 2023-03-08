@@ -267,3 +267,106 @@ export function createInput(props: InputProps) {
         }
     }
 }
+
+// Taken from: https://stackoverflow.com/a/6234804
+export function escapeHtml(html: string) {
+    return html.replaceAll(/&/g, "&amp;")
+               .replaceAll(/</g, "&lt;")
+               .replaceAll(/>/g, "&gt;")
+               .replaceAll(/"/g, "&quot;")
+               .replaceAll(/'/g, "&#039;")
+}
+
+interface PageToHtmlParams {
+    separator: string,
+}
+
+const tagRegex = /\[([^\]]+)\](.*?)\[\/\1\]/g
+
+function convertMarkupTags(markup: string): string {
+    return markup.replaceAll(tagRegex, (match, tagType, content) => {
+        if (tagType === "i") {
+            return `<i>${content}</i>`
+        } else if (tagType === "b") {
+            return `<b>${content}</b>`
+        } else if (tagType === "post") {
+            const postId = parseInt(content)  
+            return `<a class="post-link" data-post-id="${postId}">post ${postId}</a>`
+        } else {
+            return match
+        }
+    })
+}
+
+function convertMarkupSegment(part: string, convertedParts: string[], separator: string) {
+    part = part.trim()
+    if (part.length === 0) return
+
+    // Handle list
+    if (part.startsWith("* ")) {
+        convertedParts.push("<ul>")
+        const lines = part.split(separator)
+        for (const line of lines) {
+            convertedParts.push(`<li>${line.slice(2)}</li>`)
+        }
+        convertedParts.push("</ul>")
+        return
+    }
+
+    // Handle headers
+    const headerMatch = part.match(/^h(\d)\. /)
+    if (headerMatch) {
+        const sepPos = part.indexOf(separator)
+        const headerText = part.slice(4, sepPos >= 0 ? sepPos : undefined)
+        const level = headerMatch[1]
+        convertedParts.push(`<h${level}>${headerText}</h${level}>`)
+        if (sepPos >= 0) {
+            convertMarkupSegment(
+                part.slice(sepPos + separator.length), convertedParts, separator)
+        }
+        return
+    }
+
+    // In all other cases, assume that the part is just lines of text
+    const lines = part.split(separator)
+    convertedParts.push("<p>" + lines.join("<br>") + "</p>")
+}
+
+export function wikiPageToHtml(page: string, params: PageToHtmlParams): string {
+    const { separator } = params
+
+    // Escape certain characters for safety
+    page = escapeHtml(page)
+
+    // Handle external links of the form `"term":[url]`
+    page = page.replaceAll(/&quot;([^&]+)&quot;:\[([^\]]+)\]/g, (_, text, url) => {
+        return `<a href="${url}" target="_blank">${text}</a>`
+    })
+
+    // Handle style tags like "[i]" or "[b]"
+    // (do multiple passes to handle nested tags)
+    page = convertMarkupTags(convertMarkupTags(page))
+
+    // Replace references of the form "[[tag_name|alt]]" with <a> elements
+    page = page.replaceAll(/\[\[([^\]]*)\]\]/g, (_, text) =>
+        `<a class="wiki-link">${text.split("|")[0]}</a>`)
+
+    // Handle post references of the form "post #id"
+    page = page.replaceAll(/post #(\d+)/g, (_, postIdString) => {
+        const postId = parseInt(postIdString)  
+        return `<a class="post-link" data-post-id="${postId}">post #${postId}</a>`
+    })
+
+    // Handle post queries of the form "{{tag1 tag2 ...}}
+    page = page.replaceAll(/\{\{([^}]+)\}\}/g, (_, tags) => {
+        return `<a class="posts-search" data-tags="${tags}">${tags}</a>`
+    })
+
+    // Break page into segments and handle each one separately
+    const parts = page.split(separator + separator)
+    const convertedParts: string[] = []
+    parts.forEach(part =>
+        convertMarkupSegment(part, convertedParts, separator))
+
+    return convertedParts.join("")
+}

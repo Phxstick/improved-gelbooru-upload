@@ -56,12 +56,13 @@ export default class ContextMenu<DataType=HTMLElement> {
 
         // Execute given callbacks when an item is clicked
         this.menu.addEventListener("click", (event) => {
-            let node: Node = event.target as HTMLElement
+            let node = event.target as HTMLElement
             while (node.parentNode !== this.menu) {
-                node = node.parentNode!
+                if (node.parentNode === null) return
+                node = node.parentNode as HTMLElement
             }
             this.close()
-            callbacks[parseInt((node as HTMLElement).dataset.index!)](this.currentData);
+            callbacks[parseInt(node.dataset.index!)](this.currentData);
         });
 
         // Close menu when mouse is pressed somewhere outside of it
@@ -123,7 +124,13 @@ export default class ContextMenu<DataType=HTMLElement> {
         const width = this.wrapper.offsetWidth;
         let x = event.clientX;
         let y = event.clientY;
-        if (y + height > window.innerHeight) y -= height
+        if (y + height > window.innerHeight) {
+            y -= height
+            // Reverse item order if menu is displayed above instead of below
+            const reversedItems = [...this.menu.children].reverse()
+            this.menu.innerHTML = ""
+            this.menu.append(...reversedItems)
+        }
         if (x + width > window.innerWidth) x -= (x + width - window.innerWidth)
         this.wrapper.style.left = `${x}px`;
         this.wrapper.style.top = `${y}px`;
