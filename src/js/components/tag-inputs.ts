@@ -1,92 +1,9 @@
 import ContextMenu from "js/generic/context-menu";
 import TagSearch from "js/generic/tag-search";
-import { BooruApi, TagType, TagInfo, HostName } from "js/types";
-import { E, escapeHtml } from "js/utility";
+import WikiModal from "js/components/wiki-modal"
+import { BooruApi, TagType, TagInfo, HostName, EnhancedTags } from "js/types";
+import { E } from "js/utility";
 import "./tag-inputs.scss"
-
-// Create a modal dialog for displaying wiki pages
-const wikiModalHeader = E("div", { class: "header" })
-const wikiModalContent = E("div", { class: "content" })
-const wikiModal = E("div", { class: "ui modal wiki-modal" }, [
-    wikiModalHeader,
-    wikiModalContent
-])
-const alertModal = E("div", { class: "ui modal" }, [
-    E("div", { class: "content" }),
-])
-const fullscreenLoader = E("div", { class: "ui huge loader shadowed hidden" })
-const modalLoader = E("div", { class: "ui huge loader shadowed hidden" })
-
-async function openWikiPage(tag: string, api: BooruApi) {
-    const tagName = escapeHtml(tag.replaceAll("_", " "))
-    tag = tag.replaceAll(" ", "_")
-    if ($(wikiModal).modal("is active")) {
-        $(wikiModal).dimmer("show")
-        modalLoader.classList.remove("hidden")
-    } else {
-        $(wikiModal).modal("show dimmer")
-        fullscreenLoader.classList.remove("hidden")
-    }
-    const [wikiPage, recentPosts] = await Promise.all([
-        api.getWikiPage(tag),
-        api.searchPosts([tag], 14),
-        // Prevent loading from disappearing too quickly
-        new Promise(resolve => setTimeout(resolve, 260))
-    ])
-    modalLoader.classList.add("hidden")
-    fullscreenLoader.classList.add("hidden")
-    if (!wikiPage && recentPosts.length === 0) {
-        $(alertModal).modal({
-            class: 'mini',
-            classContent: "centered",
-            content: `The tag "${tagName}" doesn't exist.`,
-            duration: 200
-        } as any).modal('show');
-        return
-    }
-    wikiModalHeader.textContent = tagName
-    if (wikiPage) {
-        wikiModalContent.innerHTML = wikiPage
-    } else {
-        wikiModalContent.innerHTML =
-            `<p style="color:dimgray">There's no wiki page for this tag.</p>`
-    }
-    const thumbnails = recentPosts.map(post => {
-        const href = api.getPostUrl(post.id)
-        return E("a", { class: "booru-post", href, target: "_blank" }, [
-            E("img", { class: "small preview", src: post.thumbnailUrl })
-        ])
-    })
-    const viewAllUrl = api.getQueryUrl([tag])
-    const postsContainer = E("div", { class: "recent-posts-wrapper" }, [
-        E("div", { class: "header" }, [
-            E("h4", {}, "Recent posts"),
-            E("a", { href: viewAllUrl, target: "_blank" }, "View all"),
-        ]),
-        E("div", { class: "recent-posts" }, thumbnails)
-    ])
-    wikiModalContent.appendChild(postsContainer)
-    $(wikiModal).dimmer("hide")
-    $(wikiModal).modal("show")
-}
-
-// When F2 is pressed, open the wiki page for the currently relevant tag
-window.addEventListener("keydown", (event) => {
-    if (event.key !== "F2") return
-    const value = TagInputs.getLastActiveInput()
-    if (!value) return
-    const [activeInput, api] = value
-    const hoveredCompletion = activeInput.getHoveredCompletion()
-    if (hoveredCompletion) {
-        openWikiPage(hoveredCompletion.title, api)
-        return
-    }
-    const currentInput = activeInput.getCurrentInput()
-    if (currentInput) {
-        openWikiPage(currentInput, api)
-        return
-    }
-})
 
 // Create a popup menu for choosing a different tag type
 function openTagTypePopup(tagElement: HTMLElement, api: BooruApi) {
@@ -156,15 +73,21 @@ export default class TagInputs {
     private tagInputs: TagSearch<TagInfo>[] = []
     private container = E("div", { class: "tag-inputs-container" })
     private api: BooruApi
+    private options: TagInputOptions
+    private pastingTags = false
+    private lastActiveInput: TagSearch<TagInfo> | undefined
 
-    private static lastActiveInput: [TagSearch<TagInfo>, BooruApi] | undefined
-    static getLastActiveInput() { return TagInputs.lastActiveInput }
-
-    constructor(groupNames: string[], api: BooruApi, options: TagInputOptions) {
+    constructor(
+        groupNames: string[],
+        api: BooruApi,
+        wikiModal: WikiModal,
+        options: TagInputOptions
+    ) {
         for (const groupName of groupNames) {
             this.createInput(groupName, options)
         }
         this.api = api
+        this.options = options
 
         // Keep track of selected tags
         let activeTags: HTMLElement[]
@@ -193,7 +116,7 @@ export default class TagInputs {
 
             { title: "Open wiki page", icon: "question", action: (tagElement) => {
                 const tagName = tagElement.dataset.value!
-                openWikiPage(tagName, this.api)
+                wikiModal.openPage(tagName)
             }, condition: singleTagSelected },
 
             { title: "Set tag type", icon: "pencil", action: (tagElement) => {
@@ -217,9 +140,7 @@ export default class TagInputs {
             // ----------------------------------------------------------------
 
             { title: "Copy selected tags", icon: "copy", action: () => {
-                const selectedTags = activeTags.map(e => e.dataset.value!.replaceAll(" ", "_"))
-                activeTags.forEach(tag => tag.classList.remove("active"))
-                navigator.clipboard.writeText(selectedTags.join(" "))
+                this.copyTags(activeTags)
             }, condition: multipleTagsSelected },
 
             { title: "Remove selected tags", icon: "trash", action: () => {
@@ -232,43 +153,6 @@ export default class TagInputs {
             }, condition: multipleTagsSelected }
         ])
         tagContextMenu.attachToMultiple(this.container, "a.ui.label", (e) => e)
-
-        // Initialize modal for wiki pages
-        if (wikiModal.offsetParent === null) {
-            document.body.appendChild(wikiModal)
-            $(wikiModal).modal({ duration: 180 })
-            wikiModal.addEventListener("click", (event) => {
-                const target = event.target as HTMLElement
-                if (target.classList.contains("wiki-link")) {
-                    event.preventDefault()
-                    openWikiPage(target.textContent!, this.api)
-                }
-                else if (target.classList.contains("post-link")) {
-                    event.preventDefault()
-                    const postId = parseInt(target.dataset.postId!)
-                    const postUrl = this.api.getPostUrl(postId)
-                    window.open(postUrl, "_blank")?.focus()
-                }
-                else if (target.classList.contains("posts-search")) {
-                    event.preventDefault()
-                    const tags = target.dataset.tags!.trim().split(" ")
-                    const queryUrl = this.api.getQueryUrl(tags)
-                    window.open(queryUrl, "_blank")?.focus()
-                }
-            })
-            // Initialize large loader for the fullscreen dimmer
-            const fullscreenDimmer = document.querySelector(".ui.dimmer")
-            if (fullscreenDimmer) {
-                fullscreenDimmer.appendChild(fullscreenLoader)
-            }
-            // Create dimmer inside modal and initialize loader there
-            $(wikiModal).dimmer({ duration: 200 })
-            $(wikiModal).dimmer("set opacity", 0.65)
-            const modalDimmer = wikiModal.querySelector(".ui.dimmer")
-            if (modalDimmer) {
-                modalDimmer.appendChild(modalLoader)
-            }
-        }
     }
 
     createInput(groupName: string, options: TagInputOptions) {
@@ -299,7 +183,7 @@ export default class TagInputs {
                 return !this.tags.has(tagName)
             },
             getResults: async (query) => {
-                TagInputs.lastActiveInput = [tagSearch, this.api]
+                this.lastActiveInput = tagSearch
                 query = query.trim().toLowerCase().replaceAll(" ", "_")
                 query = query.replaceAll("\\", "\\\\")  // Replace backslash with double backslash
                 lastResults = await this.api.getTagCompletions(query)
@@ -321,6 +205,7 @@ export default class TagInputs {
             },
             onLabelCreate: async (label, tagName) => {
                 label.childNodes[0].textContent = tagName
+                if (this.pastingTags) return
                 let tagInfo: TagInfo | undefined
 
                 // If tag is included in the last search completions, take data from there
@@ -334,48 +219,13 @@ export default class TagInputs {
                 // Otherwise, try to request tag data via the API
                 if (tagInfo === undefined) {
                     try {
-                        tagInfo = await this.api.getTagInfo(tagName)
+                        tagInfo = await this.api.getSingleTagInfo(tagName)
                     } catch (error) {
                         return
                     }
-                    if (tagInfo === undefined) {
-                        tagInfo = { title: tagName, postCount: 0, type: "tag" }
-                    }
                 }
 
-                // Warn user if tag is deprecated or if its post count is below the specified threshold
-                if (tagInfo.type === "deprecated" || (tagInfo.type === "tag" &&
-                        tagInfo.postCount < options.postCountThreshold)) {
-                    label.classList.add("rare")
-                    let content
-                    if (tagInfo.type === "deprecated") {
-                        content = "This tag is deprecated."
-                    } else if (tagInfo.postCount > 0) {
-                        const postInflection = tagInfo.postCount === 1 ? "post" : "posts"
-                        content = `This tag only appears in ${tagInfo.postCount} ${postInflection}, ` +
-                            `it might be non-standard or contain a typo`
-                    } else {
-                        content = `This tag does not exist. It might contain a typo.` 
-                    }
-                    $(label).popup({
-                        content,
-                        onShow: function () { this[0].classList.add("warning") }
-                    })
-                }
-
-                // Warn user if the tag is a banned artist (only relevant for Danbooru)
-                if (this.api.host === HostName.Danbooru && label.dataset.banned) {
-                    label.classList.add("rare")
-                    $(label).popup({
-                        content: "This artist has been banned on Danbooru.",
-                        onShow: function () { this[0].classList.add("warning") }
-                    })
-                    $(label).popup("show")
-                    window.setTimeout(() => $(label).popup("hide"), 2500)
-                }
-
-                // Set tag type in the element data for styling
-                label.dataset.type = tagInfo.type
+                this.applyTagInfo(tagInfo, label)
             }
         })
 
@@ -387,19 +237,73 @@ export default class TagInputs {
 
         // Make it possible to paste a list of tags
         const innerSearchEntry = tagSearch.getElement().querySelector("input.search") as HTMLElement
-        innerSearchEntry.addEventListener("paste", (event) => {
+        innerSearchEntry.addEventListener("paste", async (event) => {
             if (!event.clipboardData) return null
             event.preventDefault()
             const text = event.clipboardData.getData("text")
             let tagNames = text.trim().split(" ")
             if (!options.separateTagsWithSpace)
                 tagNames = tagNames.map(tagName => tagName.replaceAll("_", " "))
-            tagNames.forEach(tagName => tagSearch.addSelected(tagName))
+            const existingTags = new Set(tagSearch.getValues())
+            this.pastingTags = true
+            tagSearch.addValues(tagNames)
+            this.pastingTags = false
+
+            // Get information about all new tags with a single request
+            const tagInfos = await this.api.getMultipleTagInfos(tagNames)
+            const tagElements = tagSearch.getTagElements()
+            for (const tagElement of tagElements) {
+                const tagName = tagElement.dataset.value!
+                if (existingTags.has(tagName)) continue
+                const tagInfo = tagInfos.get(tagName.replaceAll(" ", "_"))
+                this.applyTagInfo(tagInfo, tagElement)
+            }
         })
 
         this.tagInputs.push(tagSearch)
         this.groupToTagInput.set(groupName, tagSearch)
         this.container.appendChild(row)
+    }
+
+    applyTagInfo(tagInfo: TagInfo | undefined, label: HTMLElement) {
+        if (tagInfo === undefined) {
+            tagInfo = { title: "", postCount: 0, type: "tag" }
+        }
+
+        // Warn user if tag is deprecated or if its post count is below the
+        // specified threshold
+        if (tagInfo.type === "deprecated" || (tagInfo.type === "tag" &&
+                tagInfo.postCount < this.options.postCountThreshold)) {
+            label.classList.add("rare")
+            let content
+            if (tagInfo.type === "deprecated") {
+                content = "This tag is deprecated."
+            } else if (tagInfo.postCount > 0) {
+                const postInflection = tagInfo.postCount === 1 ? "post" : "posts"
+                content = `This tag only appears in ${tagInfo.postCount} ${postInflection}, ` +
+                    `it might be non-standard or contain a typo`
+            } else {
+                content = `This tag does not exist. It might contain a typo.` 
+            }
+            $(label).popup({
+                content,
+                onShow: function () { this[0].classList.add("warning") }
+            })
+        }
+
+        // Warn user if the tag is a banned artist (only relevant for Danbooru)
+        if (this.api.host === HostName.Danbooru && label.dataset.banned) {
+            label.classList.add("rare")
+            $(label).popup({
+                content: "This artist has been banned on Danbooru.",
+                onShow: function () { this[0].classList.add("warning") }
+            })
+            $(label).popup("show")
+            window.setTimeout(() => $(label).popup("hide"), 2500)
+        }
+
+        // Set tag type in the element data for styling
+        label.dataset.type = tagInfo.type
     }
 
     getActiveTags(): HTMLElement[] {
@@ -423,28 +327,60 @@ export default class TagInputs {
         return [...this.tags]
     }
 
-    getApi(): BooruApi {
-        return this.api
+    getLastActiveInput() {
+        return this.lastActiveInput
     }
 
-    getGroupedTags(): Map<string, string[]> {
+    getGroupedTags(): EnhancedTags {
         const groupToTags = new Map<string, string[]>()
+        const tagToType = new Map<string, TagType>()
         for (const [groupName, tagInput] of this.groupToTagInput.entries()) {
             const elements = tagInput.getElement().querySelectorAll("a.ui.label")
             if (elements.length === 0) continue
-            groupToTags.set(groupName, [...elements].map(
-                el => (el as HTMLElement).dataset.value!))
+            groupToTags.set(groupName, [])
+            for (const tagElement of elements) {
+                const dataset = (tagElement as HTMLElement).dataset
+                groupToTags.get(groupName)!.push(dataset.value!)
+                tagToType.set(dataset.value!, dataset.type as TagType)
+            }
         }
-        return groupToTags
+        return { groupToTags, tagToType }
     }
 
-    insertGroupedTags(groupToTags: Map<string, string[]>): void {
+    insertGroupedTags({ groupToTags, tagToType }: EnhancedTags): void {
         for (const [groupName, tags] of groupToTags.entries()) {
             const tagInput = this.groupToTagInput.get(groupName)
             if (!tagInput) continue
-            const existingTags = tagInput.getValues()
-            tagInput.setValues([...existingTags, ...tags], true)
+            const existingTags = new Set(tagInput.getValues())
+            this.pastingTags = true
+            tagInput.addValues(tags)
+            this.pastingTags = false
+            const tagElements = tagInput.getTagElements()
+            for (const tagElement of tagElements) {
+                const tag = tagElement.dataset.value!
+                if (existingTags.has(tag)) continue
+                const type = tagToType.get(tag)
+                if (type) tagElement.dataset.type = type
+            }
         }
+    }
+
+    copyTags(tagElements?: HTMLElement[], cut=false): boolean {
+        if (tagElements === undefined) {
+            tagElements = this.getActiveTags()
+        }
+        if (tagElements.length === 0) return false
+        const selectedTags = tagElements.map(element => element.dataset.value!)
+        if (!cut) {
+            tagElements.forEach(tag => tag.classList.remove("active"))
+        } else {
+            for (const tagInput of this.tagInputs) {
+                selectedTags.forEach(tag => tagInput.removeSelected(tag))
+            }
+        }
+        const normedTags = selectedTags.map(tag => tag.replaceAll(" ", "_"))
+        navigator.clipboard.writeText(normedTags.join(" "))
+        return true
     }
 
     clear() {

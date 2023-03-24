@@ -79,6 +79,7 @@ export interface UploadData {
     source: string
     tags: string[]
     rating: string
+    pixivId?: string
 }
 export interface UploadSuccess {
     successful: true
@@ -98,7 +99,8 @@ export interface BooruApi {
     getQueryUrl(tags: string[]): string
     getUploadUrl(): string
     getSettingsUrl(): string
-    getTagInfo(tagName: string): Promise<TagInfo | undefined>
+    getSingleTagInfo(tagName: string): Promise<TagInfo | undefined>
+    getMultipleTagInfos(tagNames: string[]): Promise<Map<string, TagInfo>>
     getTagCompletions(query: string): Promise<TagInfo[] | undefined>
     setTagType(tagName: string, type: TagType): Promise<boolean>
     searchPosts(tags: string[], limit?: number): Promise<BooruPost[]>
@@ -129,4 +131,9 @@ export enum Message {
     OpenExtensionOptions = "open-extension-options",
     NotifyAssociatedExtensions = "notify-associated-extensions",
     RegisterUploadPageTab = "register-upload-page-tab"
+}
+
+export interface EnhancedTags {
+    groupToTags: Map<string, string[]>
+    tagToType: Map<string, TagType>
 }

@@ -419,6 +419,10 @@ export default class TagSearch<Completion extends BaseCompletion> extends Compon
             this.currentValue = values[0]
     }
 
+    addValues(values: string[]) {
+        $(this.dropdown).dropdown("set selected", values)
+    }
+
     getValues(): string[] {
         const value = $(this.dropdown).dropdown("get value")
         return value.length ? value.split(this.props.delimiter) : []
@@ -431,6 +435,10 @@ export default class TagSearch<Completion extends BaseCompletion> extends Compon
 
     getCurrentInput(): string {
         return this.props.transformInput(this.inputElement.value)
+    }
+
+    getTagElements(): HTMLElement[] {
+        return [...this.dropdown.querySelectorAll("a.label")] as HTMLElement[]
     }
 
     clear() {

@@ -305,25 +305,61 @@ function convertMarkupSegment(part: string, convertedParts: string[], separator:
     // Handle list
     if (part.startsWith("* ")) {
         convertedParts.push("<ul>")
+        let currentLevel = 1
         const lines = part.split(separator)
         for (const line of lines) {
-            convertedParts.push(`<li>${line.slice(2)}</li>`)
+            const listItemMatch = line.match(/[*]+/)
+            if (!listItemMatch) {
+                // This case shouldn't happen if the markdown is valid
+                convertedParts.push(line)
+                continue
+            }
+            const level = listItemMatch[0].length
+            while (level < currentLevel) {
+                // convertedParts.push("</ul></li>")
+                convertedParts.push("</ul>")
+                currentLevel -= 1
+            }
+            if (level > currentLevel) {
+                // convertedParts.pop()  // Remove last </li> tag
+                convertedParts.push("<ul>")
+                currentLevel += 1
+            }
+            convertedParts.push("<li>", line.slice(level + 1), "</li>")
         }
-        convertedParts.push("</ul>")
+        while (currentLevel > 0) {
+            convertedParts.push("</ul>")
+            // if (currentLevel > 1) {
+            //     convertedParts.push("</li>")
+            // }
+            currentLevel -= 1
+        }
         return
     }
 
     // Handle headers
-    const headerMatch = part.match(/^h(\d)\. /)
+    const headerMatch = part.match(/^h(\d)(?:#([^.]*))?\. /)
     if (headerMatch) {
+        const [fullMatch, level, refId] = headerMatch
         const sepPos = part.indexOf(separator)
-        const headerText = part.slice(4, sepPos >= 0 ? sepPos : undefined)
-        const level = headerMatch[1]
-        convertedParts.push(`<h${level}>${headerText}</h${level}>`)
+        const headerText = part.slice(
+            fullMatch.length, sepPos >= 0 ? sepPos : undefined)
+        const hLevel = parseInt(level) - 1
+        convertedParts.push(
+            `<h${hLevel} data-ref="${refId}">${headerText}</h${hLevel}>`)
         if (sepPos >= 0) {
             convertMarkupSegment(
                 part.slice(sepPos + separator.length), convertedParts, separator)
         }
+        return
+    }
+
+    // Handle expansion
+    const expansionMatch = part.match(/\[expand=([^\]]*)\]([^\[]*)\[\/expand\]/)
+    if (expansionMatch) {
+        const [_, title, content] = expansionMatch
+        convertedParts.push(`<h5>${title}</h5>`)
+        convertMarkupSegment(content.trim(), convertedParts, separator)
         return
     }
 
@@ -343,11 +379,17 @@ export function wikiPageToHtml(page: string, params: PageToHtmlParams): string {
         return `<a href="${url}" target="_blank">${text}</a>`
     })
 
+    // Handle local section links of the form `"name":#refId`
+    page = page.replaceAll(/&quot;([^&]+)&quot;:#(\S+)/g, (_, text, refId) => {
+        if (refId.startsWith("dtext-")) refId = refId.slice(6)
+        return `<a class="local-link" data-linkto="${refId}">${text}</a>`
+    })
+
     // Handle style tags like "[i]" or "[b]"
     // (do multiple passes to handle nested tags)
     page = convertMarkupTags(convertMarkupTags(page))
 
-    // Replace references of the form "[[tag_name|alt]]" with <a> elements
+    // Replace tag references of the form "[[tag_name|alt]]" with <a> elements
     page = page.replaceAll(/\[\[([^\]]*)\]\]/g, (_, text) =>
         `<a class="wiki-link">${text.split("|")[0]}</a>`)
 
@@ -369,4 +411,31 @@ export function wikiPageToHtml(page: string, params: PageToHtmlParams): string {
         convertMarkupSegment(part, convertedParts, separator))
 
     return convertedParts.join("")
+}
+
+export function showInfoModal(text: string) {
+    $("body").modal({
+        class: 'mini',
+        classContent: "centered",
+        content: text,
+        duration: 160
+    } as any).modal('show');
+}
+
+type Func<T> = () => (T | Promise<T>)
+type ResultAndError<T> = [T, null] | [null, Error]
+
+export async function catchError<T>(func: Func<T>): Promise<ResultAndError<T>> {
+    try {
+        const result = await func()
+        return [result, null]
+    } catch (error) {
+        if (error instanceof Error) {
+            return [null, error]
+        } else if (typeof error === "string") {
+            return [null, new Error(error)]
+        } else {
+            return [null, new Error("Internal error")]
+        }
+    }
 }

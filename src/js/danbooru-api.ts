@@ -127,7 +127,17 @@ export default class DanbooruApi implements BooruApi {
         return origin + "/profile"
     }
 
-    private async getRawTagInfo(tagName: string): Promise<RawTagInfo | null> {
+    private processRawTagInfo(info: RawTagInfo): TagInfo {
+        const { id, name, post_count, category, is_deprecated } = info
+        return {
+            id,
+            title: name,
+            type: is_deprecated ? "deprecated" : numberToTagType[category],
+            postCount: post_count
+        }
+    }
+
+    private async getSingleRawTagInfo(tagName: string): Promise<RawTagInfo | null> {
         const params = new URLSearchParams({
             "search[name]": tagName.replaceAll(" ", "_")
         })
@@ -140,16 +150,32 @@ export default class DanbooruApi implements BooruApi {
         return responseData[0]
     }
 
-    async getTagInfo(tagName: string): Promise<TagInfo | undefined> {
-        const rawTagInfo = await this.getRawTagInfo(tagName)
+    async getSingleTagInfo(tagName: string): Promise<TagInfo | undefined> {
+        const rawTagInfo = await this.getSingleRawTagInfo(tagName)
         if (rawTagInfo === null) return
-        const { id, name, post_count, category, is_deprecated } = rawTagInfo
-        return {
-            id,
-            title: name,
-            type: is_deprecated ? "deprecated" : numberToTagType[category],
-            postCount: post_count
+        return this.processRawTagInfo(rawTagInfo)
+    }
+
+    private async getMultipleRawTagInfos(tagNames: string[]): Promise<RawTagInfo[]> {
+        const tagList = tagNames.map(tag => tag.replaceAll(" ", "_")).join(",")
+        const params = new URLSearchParams({
+            "search[name_normalize]": tagList,
+            "limit": "100"
+        })
+        const url = origin + "/tags.json?" + params.toString()
+        const response = await fetch(url, {
+            credentials: "same-origin",  // Send cookies instead of API key
+        })
+        return await response.json() as RawTagInfo[]
+    }
+
+    async getMultipleTagInfos(tagNames: string[]): Promise<Map<string, TagInfo>> {
+        const rawInfos = await this.getMultipleRawTagInfos(tagNames)
+        const map = new Map<string, TagInfo>()
+        for (const rawInfo of rawInfos) {
+            map.set(rawInfo.name, this.processRawTagInfo(rawInfo))
         }
+        return map
     }
 
     async getTagCompletions(query: string): Promise<TagInfo[] | undefined> {
@@ -184,7 +210,7 @@ export default class DanbooruApi implements BooruApi {
         if (!this.credentials) return false
         const { username, apiKey } = this.credentials
         try {
-            const rawTagInfo = await this.getRawTagInfo(tagName)
+            const rawTagInfo = await this.getSingleRawTagInfo(tagName)
             if (rawTagInfo === null) return false
             const tagId = rawTagInfo.id
             const authParams = new URLSearchParams({

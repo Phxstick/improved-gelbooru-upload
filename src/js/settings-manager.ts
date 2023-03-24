@@ -106,7 +106,9 @@ class SettingsManager {
             },
             danbooruApiKey: {
                 type: "string",
-                text: "Danbooru API key"
+                text: "Danbooru API key",
+                details: "On Danbooru, the API key is not needed for most of the extension functionality,<br>" +
+                    "but it's required for certain actions such as changing tag types or creating pools"
             },
             danbooruUsername: {
                 type: "string",

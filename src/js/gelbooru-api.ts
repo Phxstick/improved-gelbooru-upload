@@ -120,10 +120,10 @@ export default class GelbooruApi implements BooruApi {
         return baseUrl + params.toString()
     }
 
-    async getTagInfo(tagName: string): Promise<TagInfo | undefined> {
+    private async getTagInfoList(tagNames: string[]): Promise<TagInfo[]> {
         if (!this.credentials) throw new AuthError()
         const { userId, apiKey } = this.credentials
-        tagName = tagName.replaceAll(" ", "_")
+        const tagList = tagNames.map(tag => tag.replaceAll(" ", "_")).join(" ")
         const params = new URLSearchParams({
             "page": "dapi",
             "s": "tag",
@@ -131,19 +131,32 @@ export default class GelbooruApi implements BooruApi {
             "json": "1",
             "api_key": apiKey,
             "user_id": userId,
-            "name": tagName
+            "names": tagList
         })
         const response = await fetch(baseUrl + params.toString())
         const responseData = await response.json() as TagResponse
-        if (!responseData.tag || responseData.tag.length === 0) return
-        const { id, name, count, type, ambiguous } = responseData.tag[0]
-        return {
+        if (!responseData.tag) return []
+        return responseData.tag.map(({ id, name, count, type, ambiguous }) => ({
             id,
             title: name,
             type: numberToTagType[type],
             postCount: count,
             ambiguous: ambiguous !== 0
+        }))
+    }
+
+    async getMultipleTagInfos(tagNames: string[]): Promise<Map<string, TagInfo>> {
+        const tagInfoList = await this.getTagInfoList(tagNames)
+        const map = new Map<string, TagInfo>()
+        for (const tagInfo of tagInfoList) {
+            map.set(tagInfo.title, tagInfo)
         }
+        return map
+    }
+
+    async getSingleTagInfo(tagName: string): Promise<TagInfo | undefined> {
+        const tagInfoList = await this.getTagInfoList([tagName])
+        return tagInfoList.length > 0 ? tagInfoList[0] : undefined
     }
 
     async getTagCompletions(query: string): Promise<TagInfo[] | undefined> {
@@ -252,7 +265,8 @@ export default class GelbooruApi implements BooruApi {
         for (const match of result.matches) {
             match.postId = await this.getPostIdFromUrl(match.postUrl)
         }
-        return { success: true, matches: result.matches }
+        const matches = result.matches.filter(match => match.postId >= 0)
+        return { success: true, matches }
     }
 
     private async searchWiki(query: string): Promise<{ id: number, name?: string }[]> {
