@@ -27,6 +27,12 @@ import { createInput, createToggle, E } from "js/utility";
 import MultilineInput from "js/generic/multiline-input";
 
 window.onload = async () => {
+    const darkMode = window.matchMedia('(prefers-color-scheme: dark)')
+    document.body.classList.toggle("dark-mode", darkMode.matches)
+    darkMode.addEventListener('change', (event) => {
+        document.body.classList.toggle("dark-mode", event.matches)
+    })
+
     const settingsDefinitions = SettingsManager.getDefinitions()
     const keyToRow: { [key in keyof Settings]?: HTMLElement } = {}
     const toggleSubsettingsFuncs: ((show?: boolean) => void)[] = []

@@ -58,7 +58,7 @@ class SettingsManager {
             },
             separateTagsWithSpace: {
                 type: "boolean",
-                text: "Separate tags using space bar (use underscores within multi-word tags)"
+                text: "Separate tags with space bar (use underscores within multi-word tags)"
             },
             minimumPostCount: {
                 type: "integer",

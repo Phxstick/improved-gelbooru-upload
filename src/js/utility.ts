@@ -216,10 +216,11 @@ export function createToggle(props: ToggleProps) {
             })
             return false
         },
-        // onChange: () => {
-        //     const isChecked = $(element).checkbox("is checked")
-        //     if (props.onChange) props.onChange(isChecked)
-        // }
+        onChange: () => {
+            if (props.canToggle) return
+            const isChecked = $(element).checkbox("is checked")
+            if (props.onChange) props.onChange(isChecked)
+        }
     })
     if (props.defaultValue) {
         $(element).checkbox("set checked")
@@ -420,6 +421,24 @@ export function showInfoModal(text: string) {
         content: text,
         duration: 160
     } as any).modal('show');
+}
+
+export function showConfirmModal(text: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+        $("body").modal({
+            class: 'mini',
+            classContent: "centered",
+            content: text,
+            duration: 160,
+            actions: [{
+                text: "Proceed",
+                click: () => resolve(true)
+            }, {
+                text: "Cancel",
+                click: () => resolve(false)
+            }]
+        } as any).modal('show');
+    })
 }
 
 type Func<T> = () => (T | Promise<T>)

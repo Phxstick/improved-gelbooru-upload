@@ -1,5 +1,5 @@
 import browser from "webextension-polyfill";
-import { E, showInfoModal } from "js/utility"
+import { E, showInfoModal, showConfirmModal } from "js/utility"
 import { Settings, BooruApi, AuthError, StatusUpdate, Message, EnhancedTags } from "js/types"
 import ContextMenu from "js/generic/context-menu"
 import Component from "js/generic/component"
@@ -13,6 +13,7 @@ export enum TabStatus {
     Empty = "empty",
     Checking = "checking",
     Checked = "checked",
+    CheckFailed = "check-failed",
     Uploading = "uploading",
     UploadSuccess = "upload-success",
     UploadFailed = "upload-failed"
@@ -204,7 +205,14 @@ export default class MainInterface extends Component {
 
         // Create a button to reset components for a new upload
         const resetButton = E("button", { class: "styled-button" }, "Clear")
-        resetButton.addEventListener("click", () => {
+        resetButton.addEventListener("click", async () => {
+            const instance = this.tabToInstance.get(this.selectedTab)!
+            const status = this.tabToStatus.get(this.selectedTab)
+            if (status !== TabStatus.UploadSuccess && !instance.isEmpty()) {
+                const confirmed = await showConfirmModal(
+                    "Are you sure you want to clear all data?")
+                if (!confirmed) return
+            }
             this.resetTab(this.selectedTab)
         })
 
@@ -289,6 +297,12 @@ export default class MainInterface extends Component {
         uploadInstance.addStatusCheckListener((matchIds) => {
             const status = this.tabToStatus.get(tab)
             if (status !== TabStatus.Checking) return
+            if (matchIds === undefined) {
+                statusContainer.textContent = `Check failed`
+                statusContainer.classList.add("failure")
+                this.setTabStatus(tab, TabStatus.CheckFailed)
+                return
+            }
             this.setTabStatus(tab, TabStatus.Checked)
             if (matchIds.length === 0) {
                 statusContainer.textContent = `Checked ✔`

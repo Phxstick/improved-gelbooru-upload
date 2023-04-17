@@ -37,7 +37,18 @@ interface RawPost {
     md5: string
     source: string
     preview_file_url: string
+    score: number
+    fav_count: number
+    created_at: string
+    // uploader_id: number
+    // approver_id: number
+    // rating: "g" | "s" | "q" | "e"
 }
+
+const postAttributes = [
+    "id", "md5", "source", "preview_file_url",
+    "score", "fav_count", "created_at"
+]
 
 interface CreateUploadParams {
     source?: string
@@ -235,6 +246,25 @@ export default class DanbooruApi implements BooruApi {
         }
     }
 
+    private normalizePost(rawPost: RawPost): BooruPost {
+        const { id, md5, source, preview_file_url,
+            score, fav_count, created_at } = rawPost
+        return {
+            id, md5, source, score,
+            thumbnailUrl: preview_file_url,
+            favCount: fav_count,
+            creationDate: created_at
+        }
+    }
+
+    async getPostInfo(postId: number): Promise<BooruPost> {
+        const url = origin + `/posts/${postId}.json`
+        const response = await fetch(url, { credentials: "same-origin" })
+        if (!response.ok) throw new Error(`Failed with status ${response.status}.`)
+        const rawPost = await response.json() as RawPost
+        return this.normalizePost(rawPost)
+    }
+
     async searchPosts(tags: string[], limit?: number): Promise<BooruPost[]> {
         const fullResults = []
         let pid = 0
@@ -246,7 +276,7 @@ export default class DanbooruApi implements BooruApi {
                 "post[tags]": tags.join(" "),
                 "limit": pageSize.toString(),
                 "page": pid.toString(),
-                "only": "id,md5,source,preview_file_url"
+                "only": postAttributes.join(",")
             })
             const url = origin + "/posts.json?" + params.toString()
             const response = await fetch(url, {
@@ -258,12 +288,7 @@ export default class DanbooruApi implements BooruApi {
             if (results.length < pageSize) break
             pid += 1
         }
-        return fullResults.map(rawPost => ({
-            id: rawPost.id,
-            md5: rawPost.md5,
-            source: rawPost.source,
-            thumbnailUrl: rawPost.preview_file_url
-        }))
+        return fullResults.map(rawPost => this.normalizePost(rawPost))
     }
 
     async searchIqdb(params: IqdbSearchParams): Promise<IqdbSearchResult> {

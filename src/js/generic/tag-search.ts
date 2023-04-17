@@ -258,6 +258,16 @@ export default class TagSearch<Completion extends BaseCompletion> extends Compon
             $(this.dropdown).search("setting", "source", [])
         }
 
+        // Alt + click a tag to remove it
+        this.dropdown.addEventListener("click", (event) => {
+            if (!event.altKey) return
+            const target = event.target as HTMLElement
+            if (!target.classList.contains("label")) return
+            event.stopPropagation()
+            const value = target.dataset.value
+            if (value) this.removeSelected(value)
+        }, { capture: true })
+
         // Simulate multi-select dropdown functionality using manual listener
         this.inputElement.addEventListener("keydown", (event) => {
             if (event.key !== "Enter" && event.key !== this.props.delimiter) return

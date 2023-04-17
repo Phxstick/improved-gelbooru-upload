@@ -43,6 +43,9 @@ export interface BooruPost {
     md5: string
     source: string
     thumbnailUrl: string
+    score: number
+    creationDate: string
+    favCount?: number
 }
 
 export enum HostName {
@@ -103,6 +106,7 @@ export interface BooruApi {
     getMultipleTagInfos(tagNames: string[]): Promise<Map<string, TagInfo>>
     getTagCompletions(query: string): Promise<TagInfo[] | undefined>
     setTagType(tagName: string, type: TagType): Promise<boolean>
+    getPostInfo(postId: number): Promise<BooruPost>
     searchPosts(tags: string[], limit?: number): Promise<BooruPost[]>
     searchIqdb(params: IqdbSearchParams): Promise<IqdbSearchResult>
     getWikiPage(tagName: string): Promise<string | null>
@@ -123,6 +127,7 @@ export interface StatusUpdate {
     pixivId: string
     filename: string
     postIds: number[]
+    posts?: { [key in number]: BooruPost }
 }
 
 export enum Message {

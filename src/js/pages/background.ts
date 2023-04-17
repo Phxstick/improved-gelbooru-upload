@@ -38,7 +38,7 @@ async function queryIqdb(host: HostName, url: string, filename: string) {
 }
 
 function notifyAssociatedExtensions(statusUpdate: StatusUpdate) {
-    const { host, pixivId, filename, postIds } = statusUpdate
+    const { host, pixivId, filename, postIds, posts } = statusUpdate
     const postIdStrings = postIds.map(id => id.toString())
     const args: any = {
         pixivIdToPostIds: {
@@ -50,7 +50,10 @@ function notifyAssociatedExtensions(statusUpdate: StatusUpdate) {
             [filename]: {
                 [host]: postIdStrings
             }
-        }
+        },
+        posts: posts ? {
+            [host]: posts
+        } : {}
     }
     for (const extensionId of associatedExtensions) {
         browser.runtime.sendMessage(extensionId, {

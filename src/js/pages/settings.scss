@@ -1,10 +1,38 @@
 body {
   padding: 20px;
   height: unset;  // Override Semantic UI's unnecessary "height: 100%"
+  background-color: var(--background-color);
+  color: var(--color);
+
+  --color: #222;
+  --color-weak: #505050;
+  --color-blue: blue;
+  --background-color: #fafafa;
+
+  --toggle-button-color: #fff;
+  --toggle-background: rgba(0,0,0,.05);
+  --toggle-background-hover: rgba(0,0,0,.15);
+  --toggle-background-enabled: #2185d0;
+
+  --input-border-color: rgba(34,36,38,.15);
+
+  &.dark-mode {
+    --color: #c0c0c0;
+    --color-weak: #a5a5a5;
+    --color-blue: deepskyblue;
+    --background-color: #1e1f20;
+
+    --toggle-button-color: #aaa;
+    --toggle-background: #444;
+    --toggle-background-hover: #606060;
+    --toggle-background-enabled: #{darken(#2185d0, 12%)};
+
+    --input-border-color: rgba(255,255,255,0.2);
+  }
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .settings-row {
@@ -16,11 +44,46 @@ body {
 }
 
 .reload-note {
-  color: blue;
+  color: var(--color-blue);
 }
 
 .setting-details {
   font-size: 0.9rem;
-  color: #505050;
+  color: var(--color-weak);
   margin-top: 3px;
+}
+
+.ui.toggle.checkbox {
+  label {
+    display: inline-block;
+    padding-right: 10px;
+    color: var(--color);
+
+    &:after {
+      background: var(--toggle-button-color);
+    }
+    &:before {
+      background: var(--toggle-background);
+    }
+    &:hover::before {
+      background: var(--toggle-background-hover);
+    }
+  }
+  input:checked ~ label {
+    &::before {
+      background-color: var(--toggle-background-enabled) !important;
+    }
+    color: var(--color) !important;
+  }
+}
+
+.ui.form {
+  .field > label {
+    color: var(--color);
+  }
+  textarea, textarea:focus, input[type=text], input[type=text]:focus {
+    background: var(--background-color);
+    color: var(--color);
+    border-color: var(--input-border-color);
+  }
 }

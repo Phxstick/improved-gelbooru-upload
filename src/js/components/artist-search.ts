@@ -150,38 +150,36 @@ export default class ArtistSearch extends Component {
         this.searching = true
 
         // Send query to Danbooru's artist database and parse HTML response
-        let doc: Document
+        let tags: { name: string, isBanned: boolean }[]
         try {
             const response = await browser.runtime.sendMessage({
                 type: Message.GetArtistTag,
                 args: { url }
             })
             const parser = new DOMParser()
-            doc = parser.parseFromString(response.html, "text/html")
+            const doc = parser.parseFromString(response.html, "text/html")
+            const table = doc.querySelector("#artists-table tbody")!
+            const rows = [...table.querySelectorAll("tr")]
+            if (rows.length === 0) {
+                this.setStatus("No artist tag with the given URL exists.", "failure")
+                this.searchField.disabled = false
+                this.searching = false
+                return false
+            }
+            tags = rows.map(row => {
+                const nameCol = row.querySelector("td.name-column a")!
+                const statusCol = row.querySelector("td.status-column a")
+                return {
+                    name: nameCol.textContent!.replaceAll("_", " "),
+                    isBanned: statusCol ? statusCol.textContent === "Banned" : false
+                }
+            })
         } catch (error) {
             this.setStatus("Failed to search for tags.", "failure")
             this.searchField.disabled = false
             this.searching = false
             return false
         }
-
-        // Extract artist tags from the HTML document
-        const table = doc.querySelector("#artists-table tbody")!
-        const rows = [...table.querySelectorAll("tr")]
-        if (rows.length === 0) {
-            this.setStatus("No artist tag with the given URL exists.", "failure")
-            this.searchField.disabled = false
-            this.searching = false
-            return false
-        }
-        const tags = rows.map(row => {
-            const nameCol = row.querySelector("td.name-column a")!
-            const statusCol = row.querySelector("td.status-column a")
-            return {
-                name: nameCol.textContent!.replaceAll("_", " "),
-                isBanned: statusCol ? statusCol.textContent === "Banned" : false
-            }
-        })
         const tagNames = tags.map(tag => tag.name)
 
         // Insert artist tags into the first tag input, update status message

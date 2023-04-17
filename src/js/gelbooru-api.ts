@@ -52,11 +52,27 @@ interface RawPost {
     directory: string
     md5: string
     image: string
-    preview_height: string
-    preview_width: string
-    score: string | number
+    tags: string
     rating: string
+    created_at: string
+
+    title: string
+    score: string | number
     status: string
+    owner: string
+    creator_id: number
+
+    file_url: string
+    width: number
+    height: number
+
+    sample_url: string
+    sample_width: number
+    sample_height: number
+
+    preview_url: string
+    preview_width: number
+    preview_height: number
 }
 
 interface QueryResponse {
@@ -201,7 +217,26 @@ export default class GelbooruApi implements BooruApi {
         }
     }
 
-    async searchPostsRaw(tags: string[], limit?: number): Promise<RawPost[]> {
+    private normalizePost(rawPost: RawPost): BooruPost {
+        const { id, md5, source, directory, score, created_at } = rawPost
+        return {
+            id: typeof id === "number" ? id : parseInt(id),
+            md5,
+            source,
+            thumbnailUrl: `https://img3.gelbooru.com/thumbnails/${directory}/thumbnail_${md5}.jpg`,
+            score: typeof score === "number" ? score : parseInt(score),
+            creationDate: created_at
+        }
+    }
+
+    async getPostInfo(postId: number): Promise<BooruPost> {
+        const posts = await this.searchPosts([`id:${postId}`])
+        if (posts.length === 0)
+            throw new Error(`There is no post with the ID ${postId}.`)
+        return posts[0]
+    }
+
+    async searchPosts(tags: string[], limit?: number): Promise<BooruPost[]> {
         if (!this.credentials) throw new AuthError()
         const { userId, apiKey } = this.credentials
         const fullResults = []
@@ -229,17 +264,7 @@ export default class GelbooruApi implements BooruApi {
             limit = Math.min(limit, parseInt(data["@attributes"].count))
             pid += 1
         }
-        return fullResults
-    }
-
-    async searchPosts(tags: string[], limit?: number): Promise<BooruPost[]> {
-        const rawPosts = await this.searchPostsRaw(tags, limit)
-        return rawPosts.map(post => ({
-            id: typeof post.id === "number" ? post.id : parseInt(post.id),
-            md5: post.md5,
-            source: post.source,
-            thumbnailUrl: `https://img3.gelbooru.com/thumbnails/${post.directory}/thumbnail_${post.md5}.jpg`
-        }))
+        return fullResults.map(rawPost => this.normalizePost(rawPost))
     }
 
     private async getPostIdFromUrl(url: string): Promise<number> {

@@ -1,14 +1,15 @@
 import browser from "webextension-polyfill";
 import { Md5 } from "ts-md5";
 import { E } from "js/utility";
-import { BooruApi, HostName, StatusUpdate, Message } from "js/types";
+import { BooruApi, BooruPost, HostName, StatusUpdate, Message } from "js/types";
 import "./file-upload.scss";
 
 export type FileUploadCallback = (objectUrl: string) => void
-export type StatusCheckCallback = (matchIds: number[]) => void
+export type StatusCheckCallback = (matchIds: number[] | undefined) => void
 
 export interface CheckResult {
-    posts?: { [key in HostName]?: { id: number }[] }
+    postIds?: number[]
+    posts?: { [key in number]: BooruPost }
     error?: string
 }
 
@@ -52,7 +53,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     ])
     const fileInputWrapper = E("div", { class: "file-input-wrapper styled-input" }, [
         fileInputLabel,
-        pasteFileField
+        // pasteFileField
     ])
 
     // Redirect focus from wrapper to hidden input (to catch paste event)
@@ -188,21 +189,18 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         imageChecksContainer
     ])
 
-    const emitStatusUpdate = (postIds: number[]) => {
+    const emitStatusUpdate = (postIds: number[], postsList?: BooruPost[]) => {
         statusCheckListeners.forEach(listener => listener(postIds))
-        const postIdStrings = postIds.map(id => id.toString())
-        const data: CheckResult = {
-            posts: {
-                [api.host]: postIdStrings
-            }
-        }
-        onCheckedResolve(data)
+        const posts: { [key in number]: BooruPost } = {}
+        if (postsList) postsList.forEach(post => { posts[post.id] = post })
+        onCheckedResolve({ postIds, posts })
         if (!loadedPixivId) return
         const statusUpdate: StatusUpdate = {
             host: api.host,
             pixivId: loadedPixivId,
             filename: fileInput.files![0].name,
-            postIds
+            postIds,
+            posts
         }
         browser.runtime.sendMessage({
             type: Message.NotifyAssociatedExtensions,
@@ -214,21 +212,21 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         const md5 = new Md5()
         md5.appendByteArray(new Uint8Array(arrayBuffer))
         const md5hash = md5.end()
-        const md5response = await api.searchPosts(["md5:" + md5hash])
+        const posts = await api.searchPosts(["md5:" + md5hash])
 
         // Display result of MD5 check
-        noHashMatchesMessage.classList.toggle("hidden", md5response.length > 0)
-        hashMatchesWrapper.classList.toggle("hidden", md5response.length === 0)
-        if (md5response.length > 0) {
+        noHashMatchesMessage.classList.toggle("hidden", posts.length > 0)
+        hashMatchesWrapper.classList.toggle("hidden", posts.length === 0)
+        if (posts.length > 0) {
             foundMd5Match = true
             hashMatchesContainer.innerHTML = ""
-            const postIds = md5response.map(post => post.id)
-            for (const postId of postIds) {
-                const href = api.getPostUrl(postId)
-                const link = E("a", { href, target: "_blank" }, postId.toString())
+            for (const post of posts) {
+                const href = api.getPostUrl(post.id)
+                const link = E("a", { href, target: "_blank" }, post.id.toString())
                 hashMatchesContainer.appendChild(link)
             }
-            emitStatusUpdate(postIds)
+            const postIds = posts.map(post => post.id)
+            emitStatusUpdate(postIds, posts)
             return true
         }
         return false
@@ -243,30 +241,30 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         searchingBySourceMessage.textContent = `Searching for posts with Pixiv ID ${pixivId}...`
         searchingBySourceMessage.classList.remove("hidden")
         let sourceQuery = `source:*pixiv*${pixivId}*`
-        let response = await api.searchPosts([sourceQuery])
-        if (response.length === 0) {
+        let posts = await api.searchPosts([sourceQuery])
+        if (posts.length === 0) {
             sourceQuery = `source:*pximg*${pixivId}*`
-            response = await api.searchPosts([`source:*pximg*${pixivId}*`])
+            posts = await api.searchPosts([`source:*pximg*${pixivId}*`])
         }
         searchingBySourceMessage.classList.add("hidden")
 
         // Display search result
-        sourceMatchesHeader.classList.toggle("success", response.length === 0)
-        sourceMatchesHeader.classList.toggle("failure", response.length > 0)
+        sourceMatchesHeader.classList.toggle("success", posts.length === 0)
+        sourceMatchesHeader.classList.toggle("failure", posts.length > 0)
         sourceMatchesHeader.classList.remove("hidden")
-        if (response.length === 0) {
+        if (posts.length === 0) {
             sourceMatchesHeader.innerHTML = `Found no posts matching Pixiv ID ${pixivId} ✔`
             return false
         }
-        const postInflection = response.length === 1 ? "post" : "posts"
-        const postsLink = response.length === 1 ?
-            api.getPostUrl(response[0].id) : api.getQueryUrl([sourceQuery])
+        const postInflection = posts.length === 1 ? "post" : "posts"
+        const postsLink = posts.length === 1 ?
+            api.getPostUrl(posts[0].id) : api.getQueryUrl([sourceQuery])
         sourceMatchesHeader.innerHTML = `Found <a target="_blank" href="${postsLink}">`
-            + `${response.length} ${postInflection}</a> matching Pixiv ID ${pixivId}`
+            + `${posts.length} ${postInflection}</a> matching Pixiv ID ${pixivId}`
         
         // List matching posts
         sourceMatchesContainer.innerHTML = ""
-        for (const post of response) {
+        for (const post of posts) {
             const href = api.getPostUrl(post.id)
             const postElement = E("a", { class: "booru-post", href, target: "_blank" }, [
                 E("img", { class: "small preview", src: post.thumbnailUrl })
@@ -274,7 +272,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             sourceMatchesContainer.appendChild(postElement)
         }
         sourceMatchesContainer.classList.remove("hidden")
-        emitStatusUpdate(response.map(post => post.id))
+        const postIds = posts.map(post => post.id)
+        emitStatusUpdate(postIds, posts)
         return true
     }
 
@@ -301,6 +300,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             iqdbMatchesHeader.classList.add("failure")
             iqdbMatchesHeader.textContent = searchResult.error
             onCheckedResolve({ error: searchResult.error })
+            statusCheckListeners.forEach(listener => listener(undefined))
             return
         }
         const matches = searchResult.matches
@@ -330,7 +330,12 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         iqdbMatchesContainer.classList.remove("hidden")
 
         // Announce check result
-        emitStatusUpdate(matches.map(m => m.postId))
+        const postIds = matches.map(match => match.postId)
+        let posts: BooruPost[] | undefined
+        try {
+            posts = await Promise.all(postIds.map(id => api.getPostInfo(id)))
+        } catch (error) {}
+        emitStatusUpdate(postIds, posts)
     }
 
     async function runChecks(file: File) {
@@ -355,6 +360,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
                 hashCheckErrorMessage.classList.remove("hidden")
                 hashCheckErrorMessage.innerHTML = error
                 onCheckedResolve({ error })
+                statusCheckListeners.forEach(listener => listener(undefined))
                 return
             }
 
