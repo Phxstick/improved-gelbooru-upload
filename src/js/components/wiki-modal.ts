@@ -1,5 +1,6 @@
 import { E, escapeHtml, showInfoModal, catchError } from "js/utility";
 import { BooruApi, BooruPost } from "js/types";
+import "./wiki-modal.scss"
 
 export class AbortedError extends Error {
     constructor() {
@@ -8,10 +9,42 @@ export class AbortedError extends Error {
     }
 }
 
+interface WikiPage {
+    header: string
+    content: string
+    recentPosts: BooruPost[]
+}
+
+interface HistoryEntry {
+    name: string
+    data: WikiPage
+    scrollPos: number
+}
+
 export default class WikiModal {
     private readonly api: BooruApi
 
-    private readonly header = E("div", { class: "header" })
+    private readonly closeButton = 
+        E("button", { class: "close-button" }, [
+            E("i", { class: "ui icon close" })
+        ])
+    private readonly backButton =
+        E("button", { class: "history-back", disabled: "" }, [
+            E("i", { class: "ui icon arrow left" })
+        ])
+    private readonly forwardButton =
+        E("button", { class: "history-forward", disabled: "" }, [
+            E("i", { class: "ui icon arrow right" })
+        ])
+    private readonly headerText = E("div", { class: "header-text" })
+    private readonly header = E("div", { class: "header" }, [
+        this.headerText,
+        E("div", { class: "header-buttons" }, [
+            this.backButton,
+            this.forwardButton,
+            this.closeButton
+        ])
+    ])
     private readonly content = E("div", { class: "content" })
     private readonly root = E("div", { class: "ui modal wiki-modal" }, [
         this.header,
@@ -25,10 +58,24 @@ export default class WikiModal {
     private loading = false
     private abortLoading = () => {}
 
+    private readonly maxHistorySize = 10
+    private history: HistoryEntry[]  = []
+    private historyIndex = -1
+
     constructor(api: BooruApi) {
         this.api = api
         document.body.appendChild(this.root)
-        $(this.root).modal({ duration: 180 })
+        $(this.root).modal({
+            duration: 180,
+            // Save scroll position when modal is closed
+            onHide: () => {
+                if (this.historyIndex < 0) return
+                const scrollPos = this.content.scrollTop
+                this.history[this.historyIndex].scrollPos = scrollPos
+            }
+        })
+
+        // Add event listeners for various types of links in the page contents
         this.root.addEventListener("click", (event) => {
             const target = event.target as HTMLElement
             if (target.classList.contains("wiki-link")) {
@@ -63,11 +110,13 @@ export default class WikiModal {
                 window.open(queryUrl, "_blank")?.focus()
             }
         })
+
         // Initialize large loader for the fullscreen dimmer
         const fullscreenDimmer = document.querySelector(".ui.dimmer")
         if (fullscreenDimmer) {
             fullscreenDimmer.appendChild(this.fullscreenLoader)
         }
+
         // Create dimmer inside modal and initialize loader there
         $(this.root).dimmer({ duration: 200 })
         $(this.root).dimmer("set opacity", 0.65)
@@ -75,19 +124,98 @@ export default class WikiModal {
         if (modalDimmer) {
             modalDimmer.appendChild(this.modalLoader)
         }
+
         // Make it possible to cancel loading by pressing escape
         window.addEventListener("keydown", (event) => {
             if (event.key === "Escape") {
                 if (this.loading) this.abortLoading()
             }
         }, { capture: true })
+
+        // Add event handlers to header buttons
+        this.closeButton.addEventListener("click", () => {
+            $(this.root).modal("hide")
+        })
+        this.forwardButton.addEventListener("click", () => {
+            if (this.historyIndex < 0) return
+            if (this.historyIndex === this.history.length - 1) return
+            this.history[this.historyIndex].scrollPos = this.content.scrollTop
+            this.historyIndex += 1
+            this.backButton.removeAttribute("disabled")
+            if (this.historyIndex === this.history.length - 1) {
+                this.forwardButton.setAttribute("disabled", "")
+            }
+            const { name, data, scrollPos } = this.history[this.historyIndex]
+            this.displayPage(name, data, scrollPos)
+        })
+        this.backButton.addEventListener("click", () => {
+            if (this.historyIndex < 0) return
+            if (this.historyIndex === 0) return
+            this.history[this.historyIndex].scrollPos = this.content.scrollTop
+            this.historyIndex -= 1
+            this.forwardButton.removeAttribute("disabled")
+            if (this.historyIndex === 0) {
+                this.backButton.setAttribute("disabled", "")
+            }
+            const { name, data, scrollPos } = this.history[this.historyIndex]
+            this.displayPage(name, data, scrollPos)
+        })
+
     }
 
-    async openPage(tag: string) {
+    async openPage(name: string) {
         if (this.loading) return
+        name = name.replaceAll(" ", "_").toLowerCase()
+
+        // Save scroll position of the current page
+        if (this.historyIndex >= 0 && this.content.offsetParent) {
+            this.history[this.historyIndex].scrollPos = this.content.scrollTop
+        }
+
+        // Take wiki page from history if it's cached there, otherwise fetch it
+        let wikiPage: WikiPage
+        const index = this.history.findIndex(item => item.name === name)
+        if (index >= 0) {
+            wikiPage = this.history[index].data
+            // Remove old history entry
+            if (index <= this.historyIndex) {
+                this.history.splice(index, 1)
+                this.historyIndex -= 1
+            }
+        } else {
+            const page = await this.loadPage(name)
+            if (!page) return
+            wikiPage = page
+        }
+
+        // Update history
+        if (this.historyIndex >= 0) {
+            this.history.splice(this.historyIndex + 1)
+        }
+        if (this.history.length === this.maxHistorySize) {
+            this.history.splice(0, 1)
+        }
+        if (this.historyIndex < this.maxHistorySize - 1) {
+            this.historyIndex += 1
+        }
+        if (this.historyIndex === this.history.length - 1) {
+            this.forwardButton.setAttribute("disabled", "")
+        }
+        if (this.history.length > 0) {
+            this.backButton.removeAttribute("disabled")
+        }
+        this.history.push({
+            name,
+            data: wikiPage,
+            scrollPos: 0
+        })
+
+        this.displayPage(name, wikiPage)
+    }
+
+    private async loadPage(name: string): Promise<WikiPage | undefined> {
+        const displayName = escapeHtml(name.replaceAll("_", " "))
         this.loading = true
-        const tagName = escapeHtml(tag.replaceAll("_", " "))
-        tag = tag.replaceAll(" ", "_").toLowerCase()
 
         // Show fitting dimmer and loader
         if ($(this.root).modal("is active")) {
@@ -103,8 +231,8 @@ export default class WikiModal {
             return new Promise(async (resolve, reject) => {
                 this.abortLoading = () => reject(new AbortedError())
                 const results = await Promise.all([
-                    this.api.getWikiPage(tag),
-                    this.api.searchPosts([tag], 14),
+                    this.api.getWikiPage(name),
+                    this.api.searchPosts([name], 14),
                     // Prevent spinner from disappearing too quickly
                     new Promise(res => setTimeout(res, 200))
                 ])
@@ -121,7 +249,7 @@ export default class WikiModal {
                 $(this.root).modal("hide dimmer")
                 return
             } else {
-                showInfoModal(`Failed to load the wiki page for "${tagName}".`)
+                showInfoModal(`Failed to load the wiki page for "${displayName}".`)
                 return
             }
         }
@@ -129,19 +257,28 @@ export default class WikiModal {
 
         // Show notification if the given tag doesn't exist
         if (!wikiPage && recentPosts.length === 0) {
-            showInfoModal(`The tag "${tagName}" doesn't exist.`)
+            showInfoModal(`The tag "${displayName}" doesn't exist.`)
             return
         }
 
-        // Insert wiki page (if available)
-        this.header.textContent = tagName
-        if (wikiPage) {
-            this.content.innerHTML = wikiPage
+        return {
+            header: displayName,
+            content: wikiPage,
+            recentPosts
+        }
+    }
+
+    private displayPage(name: string, data: WikiPage, scrollPos=0) {
+        const { header, content, recentPosts } = data
+
+        // Set header and insert page content (if available)
+        this.headerText.textContent = header
+        if (content) {
+            this.content.innerHTML = content
         } else {
             this.content.innerHTML =
-                `<p style="color:dimgray">There's no wiki page for this tag.</p>`
+                `<p style="color:dimgray">There's no wiki page with this name.</p>`
         }
-        this.content.scrollTop = 0
 
         // Display a few recent posts (if available)
         if (recentPosts.length) {
@@ -151,16 +288,18 @@ export default class WikiModal {
                     E("img", { class: "small preview", src: post.thumbnailUrl })
                 ])
             })
-            const viewAllUrl = this.api.getQueryUrl([tag])
+            const viewAllUrl = this.api.getQueryUrl([name])
+            const postsHeader = E("div", { class: "recent-posts-header" }, [
+                E("h4", {}, "Recent posts"),
+                E("a", { href: viewAllUrl, target: "_blank" }, "View all"),
+            ])
             const postsContainer = E("div", { class: "recent-posts-wrapper" }, [
-                E("div", { class: "header" }, [
-                    E("h4", {}, "Recent posts"),
-                    E("a", { href: viewAllUrl, target: "_blank" }, "View all"),
-                ]),
                 E("div", { class: "recent-posts" }, thumbnails)
             ])
+            this.content.appendChild(postsHeader)
             this.content.appendChild(postsContainer)
         }
+        this.content.scrollTop = scrollPos
 
         $(this.root).dimmer("hide")
         $(this.root).modal("show")

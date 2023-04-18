@@ -1,0 +1,106 @@
+.wiki-modal {
+  &.ui.modal > .header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+
+    .header-buttons {
+      margin-left: auto;
+      display: flex;
+      flex-direction: row;
+      margin-right: -6px;
+
+      > button {
+        font-size: 1.6rem;
+        border: 0;
+        padding-top: 5px;
+        padding-bottom: 4px;
+        margin-top: -5px;
+        margin-bottom: -4px;
+        padding-left: 3px;
+        padding-right: 1px;
+        background-color: transparent;
+        color: #888;
+
+        &:hover {
+          color: #505050;
+        }
+        &:disabled {
+          color: #d0d0d0;
+        }
+        &:not(:disabled) {
+          cursor: pointer;
+        }
+        &:not(:first-child) {
+          margin-left: 6px;
+        }
+      }
+    }
+  }
+
+  .content {
+    p {
+      margin-bottom: 10px;
+    }
+
+    h3 {
+      margin-top: 14px;
+      margin-bottom: 10px;
+    }
+    h4 {
+      margin-top: 14px;
+      margin-bottom: 10px;
+    }
+    h5 {
+      margin-top: 12px;
+      margin-bottom: 8px;
+    }
+
+    ul {
+      margin-top: 10px;
+      margin-bottom: 10px;
+
+      ul {
+        margin-top: 3px;
+        margin-bottom: 3px;
+        padding-left: 22px;
+      }
+    }
+  }
+
+  .recent-posts-wrapper {
+    padding: 1px;  // To prevent cutting off outline of thumbnails
+    white-space: nowrap;
+    overflow: hidden;
+    position: relative;
+    margin-right: -4px;
+
+    &:after {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      right: 0;
+      content: "";
+      width: 10px;
+      background: linear-gradient(to left, white, 60%, transparent);
+    }
+
+    .recent-posts {
+      padding-right: 10px;
+    }
+  }
+
+  .recent-posts-header {
+    display: flex;
+    flex-direction: row;
+    margin-top: 14px;
+    margin-bottom: 10px;
+
+    h4 {
+      margin: 0;
+    }
+    a {
+      margin-left: 10px;
+    }
+  }
+}
