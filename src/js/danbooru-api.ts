@@ -1,6 +1,6 @@
 import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult } from "js/types"
 import IQDB from "js/iqdb-search"
-import { wikiPageToHtml } from "js/utility"
+import { wikiPageToHtml, unescapeHtml } from "js/utility"
 
 const origin = "https://danbooru.donmai.us"
 
@@ -184,7 +184,7 @@ export default class DanbooruApi implements BooruApi {
         const rawInfos = await this.getMultipleRawTagInfos(tagNames)
         const map = new Map<string, TagInfo>()
         for (const rawInfo of rawInfos) {
-            map.set(rawInfo.name, this.processRawTagInfo(rawInfo))
+            map.set(unescapeHtml(rawInfo.name), this.processRawTagInfo(rawInfo))
         }
         return map
     }

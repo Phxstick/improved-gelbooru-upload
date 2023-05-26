@@ -1,5 +1,5 @@
 import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult } from "js/types"
-import { wikiPageToHtml } from "js/utility"
+import { wikiPageToHtml, unescapeHtml } from "js/utility"
 import IQDB from "js/iqdb-search"
 
 const origin = "https://gelbooru.com/"
@@ -165,7 +165,7 @@ export default class GelbooruApi implements BooruApi {
         const tagInfoList = await this.getTagInfoList(tagNames)
         const map = new Map<string, TagInfo>()
         for (const tagInfo of tagInfoList) {
-            map.set(tagInfo.title, tagInfo)
+            map.set(unescapeHtml(tagInfo.title), tagInfo)
         }
         return map
     }

@@ -255,7 +255,8 @@ export default class TagInputs {
             for (const tagElement of tagElements) {
                 const tagName = tagElement.dataset.value!
                 if (existingTags.has(tagName)) continue
-                const tagInfo = tagInfos.get(tagName.replaceAll(" ", "_"))
+                const tagKey = tagName.replaceAll(" ", "_")
+                const tagInfo = tagInfos.get(tagKey)
                 this.applyTagInfo(tagInfo, tagElement)
             }
         })

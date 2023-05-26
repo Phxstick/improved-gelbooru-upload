@@ -278,6 +278,14 @@ export function escapeHtml(html: string) {
                .replaceAll(/'/g, "&#039;")
 }
 
+export function unescapeHtml(str: string) {
+    return str.replaceAll("&amp;", "&")
+              .replaceAll("&lt;", "<")
+              .replaceAll("&gt;", ">")
+              .replaceAll("&quot;", `"`)
+              .replaceAll("&#039;", `'`)
+}
+
 interface PageToHtmlParams {
     separator: string,
 }
