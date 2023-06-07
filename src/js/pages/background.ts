@@ -3,9 +3,11 @@ import SettingsManager from "js/settings-manager";
 import { HostName, StatusUpdate, Message } from "js/types";
 import { getApi } from "js/api"
 
+// const PIXIV_EXTENSION = "hbghinibnihlfahabmgdanonolmihbko"
+const PIXIV_EXTENSION = "bpglogcjlfchmgbmipjfagbhcpeamhpe"
+
 const associatedExtensions = [
-    "hbghinibnihlfahabmgdanonolmihbko",
-    "bpglogcjlfchmgbmipjfagbhcpeamhpe"
+    PIXIV_EXTENSION,
 ]
 const uploadTabKeys: { [key in HostName]: string } = {
     [HostName.Gelbooru]: "gelbooruUploadTabs",
@@ -98,6 +100,12 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
         if (!sender.tab || !sender.tab.id) return
         const storageKey = uploadTabKeys[args.host as HostName]
         await browser.storage.local.set({ [storageKey]: sender.tab.id })
+
+    } else if (request.type === Message.DownloadPixivImage) {
+        return browser.runtime.sendMessage(PIXIV_EXTENSION, {
+            type: "download-pixiv-image",
+            args
+        })
     }
 })
 

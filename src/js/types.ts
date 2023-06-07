@@ -135,10 +135,11 @@ export enum Message {
     GetArtistTag = "get-artist-tag",
     OpenExtensionOptions = "open-extension-options",
     NotifyAssociatedExtensions = "notify-associated-extensions",
-    RegisterUploadPageTab = "register-upload-page-tab"
+    RegisterUploadPageTab = "register-upload-page-tab",
+    DownloadPixivImage = "download-pixiv-image"
 }
 
 export interface EnhancedTags {
-    groupToTags: Map<string, string[]>
-    tagToType: Map<string, TagType>
+    groupToTags: { [key in string]: string[] }
+    tagToType: { [key in string]: TagType }
 }

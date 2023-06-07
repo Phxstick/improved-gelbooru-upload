@@ -1,6 +1,6 @@
 import browser from "webextension-polyfill";
 import { Md5 } from "ts-md5";
-import { E } from "js/utility";
+import { E, showInfoModal } from "js/utility";
 import { BooruApi, BooruPost, HostName, StatusUpdate, Message } from "js/types";
 import "./file-upload.scss";
 
@@ -13,10 +13,17 @@ export interface CheckResult {
     error?: string
 }
 
+interface ImageInfo {
+    fileName: string
+    fileType: string
+    url: string
+}
+
 export interface FileUpload {
     getElement: () => HTMLElement
     getFile: () => File | undefined
     getUrl: () => string
+    setUrl: (url: string) => void
     getPixivId: () => string
     reset: () => void
     foundMd5Match: () => boolean
@@ -44,39 +51,129 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     })
     const hiddenInput = E("input", { class: "hidden-input", tabindex: "-1" })
 
-    // Create field that can be focussed for pasting images from clipboard
-    const pasteFileField = E("div", { class: "paste-file-field", tabindex: "0" }, [
+    // Create field that can be focussed for pasting an image URL
+    const pasteArea = E("div", { class: "paste-field", tabindex: "0" }, [
         hiddenInput,
         E("i", { class: "paste icon"}),
-        E("div", { class: "paste-message" }, "Press Ctrl+V to paste image"),
-        E("div", { class: "paste-error-message failure" }, "Clipboard contains no image!")
+        E("div", { class: "paste-info status-message" },
+            "Press Ctrl+V to paste image URL"),
+        E("div", { class: "paste-error status-message failure" },
+            "Clipboard contains no image URL"),
+        E("div", { class: "downloading status-message" },
+            "Downloading image..."),
+        E("div", { class: "download-error status-message failure" },
+            "Failed to download image")
     ])
     const fileInputWrapper = E("div", { class: "file-input-wrapper styled-input" }, [
         fileInputLabel,
-        // pasteFileField
+        pasteArea
     ])
 
+    let downloading = false
     // Redirect focus from wrapper to hidden input (to catch paste event)
-    pasteFileField.addEventListener("focus", (event) => {
+    pasteArea.addEventListener("focus", (event) => {
+        if (downloading) return
+        pasteArea.classList.remove("show-message", "download-error")
         event.preventDefault()
         hiddenInput.focus()
     })
     hiddenInput.addEventListener("focusout", () => {
-        pasteFileField.classList.remove("show-paste-error")
+        pasteArea.classList.remove("show-message", "paste-error")
     })
 
-    // Press Ctrl + V to paste image (show error if there's none)
-    hiddenInput.addEventListener("paste", (event) => {
-        event.preventDefault()
-        const containsFile = event.clipboardData &&
-            event.clipboardData.files.length === 1 &&
-            event.clipboardData.files.item(0)!.type.startsWith("image")
-        if (!containsFile) {
-            pasteFileField.classList.add("show-paste-error")
+    function getImageInfo(event: ClipboardEvent): ImageInfo | undefined {
+        if (!event.clipboardData) return
+        let url = event.clipboardData.getData("text/plain")
+        if (!url) return
+        let parsedUrl: URL
+        try {
+            parsedUrl = new URL(url)
+        } catch (e) { return }
+        const pathParts = parsedUrl.pathname.split("/")
+        let fileName = pathParts[pathParts.length - 1]
+        const fileTypeRegex = /\.(png|jpg|jpeg)$/
+        const fileTypeMatch = fileName.match(fileTypeRegex)
+        let fileType: string
+        if (parsedUrl.hostname === "pbs.twimg.com") {
+            const format = parsedUrl.searchParams.get("format")
+            if (!format) return
+            fileType = format
+            fileName += "." + fileType
+            parsedUrl.searchParams.set("name", "orig")
+            url = parsedUrl.toString()
+        } else if (fileTypeMatch) {
+            fileType = fileTypeMatch[1]
+        } else {
             return
         }
+        return { fileName, fileType, url }
+    }
+
+    async function downloadImage(url: string): Promise<Blob | undefined> {
+        const parsedUrl = new URL(url)
+        let finalUrl = url
+        // If the image is from Pixiv, let the Pixiv extension download it
+        if (parsedUrl.hostname === "i.pximg.net") {
+            try {
+                const { dataUrl } = await browser.runtime.sendMessage({
+                    type: Message.DownloadPixivImage,
+                    args: { url }
+                })
+                if (!dataUrl) return
+                finalUrl = dataUrl
+            } catch (e) {
+                showInfoModal(
+                    "Cannot directly download from Pixiv.<br>" +
+                    "This requires the browser extension<br>" +
+                    "<b>Pixiv to Gelbooru upload helper</b>")
+                return
+            }
+        }
+        try {
+            const response = await fetch(finalUrl)
+            if (!response.ok) return
+            return await response.blob()
+        } catch (error) {
+            return
+        }
+    }
+
+    // Press Ctrl + V to paste
+    hiddenInput.addEventListener("paste", async (event) => {
+        event.preventDefault()
+        if (downloading) return
+        pasteArea.classList.remove("download-error")
+
+        // Check if a valid image URL has been pasted
+        const imageInfo = getImageInfo(event)
+        if (!imageInfo) {
+            pasteArea.classList.add("show-message", "paste-error")
+            return
+        }
+        const { fileName, fileType, url } = imageInfo
         hiddenInput.blur()
-        fileInput.files = event.clipboardData.files
+
+        // Download the image
+        downloading = true
+        fileInput.disabled = true
+        fileInputWrapper.classList.add("disabled")
+        pasteArea.classList.add("show-message", "downloading")
+        const blob = await downloadImage(url)
+        pasteArea.classList.remove("downloading")
+        fileInputWrapper.classList.remove("disabled")
+        fileInput.disabled = false
+        downloading = false
+        if (!blob) {
+            pasteArea.classList.add("show-message", "download-error")
+            return
+        }
+        pasteArea.classList.remove("show-message")
+
+        // Update file input and run event handlers
+        const file = new File([blob], fileName, { type: `image/${fileType}`})
+        const dataTransfer = new DataTransfer()
+        dataTransfer.items.add(file)
+        fileInput.files = dataTransfer.files
         fileInput.dispatchEvent(new Event("change"))
     })
 
@@ -132,10 +229,14 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     })
     // Highlight label when dragging something above it
     fileInputLabel.addEventListener("dragenter", () => {
+        if (downloading) return
         fileInputWrapper.classList.add("dragover")
     })
     fileInputLabel.addEventListener("dragleave", () => {
         fileInputWrapper.classList.remove("dragover")
+    })
+    fileInputLabel.addEventListener("click", (event) => {
+        if (downloading) event.preventDefault()
     })
 
     // Create elements for MD5 check
@@ -441,6 +542,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         foundMd5Match: () => foundMd5Match,
         getLargeImagePreview: () => imagePreviewLarge,
         getUrl: () => loadedUrl,
+        setUrl: (url: string) => { loadedUrl = url },
         getPixivId: () => loadedPixivId,
         handleDropData,
         addFileUploadListener: (listener) => uploadListeners.push(listener),

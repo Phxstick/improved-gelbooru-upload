@@ -47,7 +47,7 @@
   padding-left: 10px;
   padding-right: 10px;
 
-  &:not(:disabled):hover {
+  &:not(:disabled):not(.disabled):hover {
     border-color: rgba(34, 36, 38, 0.35);  // Same as the Semantic UI tag inputs
   }
 }

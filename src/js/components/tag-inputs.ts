@@ -333,35 +333,39 @@ export default class TagInputs {
     }
 
     getGroupedTags(): EnhancedTags {
-        const groupToTags = new Map<string, string[]>()
-        const tagToType = new Map<string, TagType>()
+        const groupToTags: { [tag: string]: string[] } = {}
+        const tagToType: { [tag: string]: TagType } = {}
         for (const [groupName, tagInput] of this.groupToTagInput.entries()) {
             const elements = tagInput.getElement().querySelectorAll("a.ui.label")
             if (elements.length === 0) continue
-            groupToTags.set(groupName, [])
+            const tagList = []
             for (const tagElement of elements) {
                 const dataset = (tagElement as HTMLElement).dataset
-                groupToTags.get(groupName)!.push(dataset.value!)
-                tagToType.set(dataset.value!, dataset.type as TagType)
+                const tag = dataset.value!
+                const tagType = dataset.type as TagType
+                tagList.push(tag)
+                if (tagType !== "tag")
+                    tagToType[tag] = tagType
             }
+            groupToTags[groupName] = tagList
         }
         return { groupToTags, tagToType }
     }
 
     insertGroupedTags({ groupToTags, tagToType }: EnhancedTags): void {
-        for (const [groupName, tags] of groupToTags.entries()) {
+        for (const groupName in groupToTags) {
             const tagInput = this.groupToTagInput.get(groupName)
             if (!tagInput) continue
             const existingTags = new Set(tagInput.getValues())
             this.pastingTags = true
-            tagInput.addValues(tags)
+            tagInput.addValues(groupToTags[groupName])
             this.pastingTags = false
             const tagElements = tagInput.getTagElements()
             for (const tagElement of tagElements) {
                 const tag = tagElement.dataset.value!
                 if (existingTags.has(tag)) continue
-                const type = tagToType.get(tag)
-                if (type) tagElement.dataset.type = type
+                const tagType = tagToType[tag]
+                if (tagType) tagElement.dataset.type = tagType
             }
         }
     }

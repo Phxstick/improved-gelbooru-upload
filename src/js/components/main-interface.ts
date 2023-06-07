@@ -9,6 +9,15 @@ import TagInputs from "js/components/tag-inputs"
 import WikiModal from "js/components/wiki-modal"
 import "./main-interface.scss"
 
+type TabDataStore = {
+    [key in string]: {
+        title: string
+        source: string
+        rating: string
+        tags: EnhancedTags
+    }
+}
+
 export enum TabStatus {
     Empty = "empty",
     Checking = "checking",
@@ -23,6 +32,7 @@ export default class MainInterface extends Component {
     private readonly api: BooruApi
     private readonly settings: Settings
     private readonly wikiModal: WikiModal
+    private readonly tabDataStorageKey: string
 
     private readonly tabToInstance = new WeakMap<HTMLElement, UploadInterface>()
     private readonly tabToStatus = new WeakMap<HTMLElement, TabStatus>()
@@ -46,6 +56,7 @@ export default class MainInterface extends Component {
         this.api = api
         this.settings = settings
         this.wikiModal = new WikiModal(api)
+        this.tabDataStorageKey = "tabData-" + api.host
 
         const tabsContainer = E("div", { class: "tabs-container" })
         tabsContainer.addEventListener("click", (event) => {
@@ -65,18 +76,18 @@ export default class MainInterface extends Component {
 
         const multipleTabsSelected = (tab: HTMLElement) =>
             tabSelection.contains(tab) && tabSelection.size() > 1
-        let copiedTags: EnhancedTags
+        let copiedTags: EnhancedTags | undefined
         const tabContextMenu = new ContextMenu([
             { title: "Copy tags", icon: "copy", action: (tab) => {
                 const instance = this.tabToInstance.get(tab)!
                 copiedTags = instance.getGroupedTags()
             }, condition: (tab) => {
-                return !multipleTabsSelected(tab) &&
-                    this.tabToInstance.get(tab)!.getGroupedTags().groupToTags.size > 0
+                const instance = this.tabToInstance.get(tab)!
+                return !multipleTabsSelected(tab) && instance.containsTags()
             } },
             { title: "Paste tags", icon: "paste", action: (tab) => {
                 const instance = this.tabToInstance.get(tab)!
-                instance.insertGroupedTags(copiedTags)
+                if (copiedTags) instance.insertGroupedTags(copiedTags)
             }, condition: (tab) => {
                 return !multipleTabsSelected(tab) && copiedTags !== undefined
             } },
@@ -243,7 +254,7 @@ export default class MainInterface extends Component {
             this.root.appendChild(largeImagePreviewWrapper)
         }
 
-        // If Ctrl + C is pressed, try to copy selected tags in the active tab
+        // If Ctrl + c is pressed, try to copy selected tags in the active tab
         window.addEventListener("keydown", (event) => {
             if ((event.key === "c" || event.key === "x") && event.ctrlKey) {
                 const instance = this.tabToInstance.get(this.selectedTab)!
@@ -252,7 +263,76 @@ export default class MainInterface extends Component {
             }
         })
 
-        // When F2 is pressed, open the wiki page for the currently relevant tag
+        // If Ctrl + s is pressed, save the state of all tabs where tags
+        // were entered and a file was added but it hasn't been uploaded yet
+        window.addEventListener("keydown", async (event) => {
+            if (event.key !== "s" || !event.ctrlKey) return
+            event.preventDefault()
+            let counter = 0
+            const storageKey = this.tabDataStorageKey
+            const storageData = await browser.storage.local.get(storageKey)
+            const dataObject = (storageData[storageKey] || {}) as TabDataStore
+            for (const tab of this.tabsContainer.children) {
+                const instance = this.tabToInstance.get(tab as HTMLElement)!
+                const tabStatus = this.tabToStatus.get(tab as HTMLElement)
+                if (tabStatus === TabStatus.UploadSuccess ||
+                        !instance.containsTags()) continue
+                const fileUrl = instance.getFileUrl()
+                if (!fileUrl) continue
+                const data = instance.getData()
+                const groupedTags = instance.getGroupedTags()
+                dataObject[fileUrl] = {
+                    title: data.title,
+                    source: data.source,
+                    tags: groupedTags,
+                    rating: data.rating
+                }
+                ++counter
+            }
+            try {
+                await browser.storage.local.set({ [storageKey]: dataObject })
+            } catch (e) {
+                showInfoModal(
+                    `Failed to save data<br>(probably exceeded storage quota)`)
+            }
+            if (counter === 0) {
+                showInfoModal(`There is no data to save.`)
+            } else {
+                showInfoModal(`Saved the state of ${counter} tabs.`)
+            }
+        })
+        // If Ctrl + p is pressed, load all saved data into new tabs
+        window.addEventListener("keydown", async (event) => {
+            if (event.key !== "p" || !event.ctrlKey) return
+            event.preventDefault()
+            const storageKey = this.tabDataStorageKey
+            const storageData = await browser.storage.local.get(storageKey)
+            const dataObject = (storageData[storageKey] || {}) as TabDataStore
+
+            // Remember which images are already loaded to prevent loading twice
+            const loadedFileUrls = new Set<string>()
+            for (const tab of this.tabsContainer.children) {
+                const instance = this.tabToInstance.get(tab as HTMLElement)!
+                const fileUrl = instance.getFileUrl()
+                if (fileUrl) loadedFileUrls.add(fileUrl)
+            }
+
+            for (const fileUrl in dataObject) {
+                if (loadedFileUrls.has(fileUrl)) continue
+                const data = dataObject[fileUrl]
+                const newTab = this.addTab(false)
+                const instance = this.tabToInstance.get(newTab)!
+                instance.insertData({
+                    title: data.title,
+                    source: data.source,
+                    rating: data.rating
+                })
+                instance.insertGroupedTags(data.tags)
+                instance.setFileUrl(fileUrl)
+            }
+        })
+
+        // If F2 is pressed, open the wiki page for the currently relevant tag
         window.addEventListener("keydown", (event) => {
             if (event.key !== "F2") return
             const instance = this.tabToInstance.get(this.selectedTab)!
@@ -287,12 +367,27 @@ export default class MainInterface extends Component {
         const instanceElement = uploadInstance.getElement()
         instanceElement.classList.add("hidden")
         this.interfaceWrapper.appendChild(instanceElement)
-        uploadInstance.addFileUploadListener((objectUrl) => {
+        uploadInstance.addFileUploadListener(async (objectUrl) => {
             imagePreview.src = objectUrl
             statusContainer.classList.remove("success", "failure", "uploaded")
             statusContainer.textContent = "Checking..."
             this.setTabStatus(tab, TabStatus.Checking)
             uploadInstance.clearPixivTags()
+
+            // Load saved data if available
+            const storageKey = this.tabDataStorageKey
+            const storageData = await browser.storage.local.get(storageKey)
+            const saveData = storageData[storageKey] as TabDataStore | undefined
+            if (!saveData) return
+            const fileUrl = uploadInstance.getFileUrl()
+            const tabData = saveData[fileUrl]
+            if (!tabData) return
+            uploadInstance.insertData({
+                title: tabData.title,
+                source: tabData.source,
+                rating: tabData.rating
+            })
+            uploadInstance.insertGroupedTags(tabData.tags)
         })
         uploadInstance.addStatusCheckListener((matchIds) => {
             const status = this.tabToStatus.get(tab)
@@ -382,6 +477,15 @@ export default class MainInterface extends Component {
                         type: Message.NotifyAssociatedExtensions,
                         args: statusUpdate
                     })
+                }
+                // Delete saved data if it exists
+                const storageKey = this.tabDataStorageKey
+                const storageData = await browser.storage.local.get(storageKey)
+                const data = storageData[storageKey] as TabDataStore | undefined
+                const fileUrl = instance.getFileUrl()
+                if (data && fileUrl in data) {
+                    delete data[fileUrl]
+                    await browser.storage.local.set({ [storageKey]: data })
                 }
             } else {
                 statusContainer.classList.add("failure")

@@ -114,6 +114,18 @@ export default class UploadInterface extends Component {
         this.root.scrollTop = 0
     }
 
+    insertData(data: Partial<UploadData>) {
+        if (data.title) {
+            this.titleInput.value = data.title
+        }
+        if (data.source) {
+            this.sourceInput.value = data.source
+        }
+        if (data.rating) {
+            this.ratingSelection.setValue(data.rating)
+        }
+    }
+
     getLargeImagePreview(): HTMLElement {
         return this.fileUpload.getLargeImagePreview()
     }
@@ -165,6 +177,18 @@ export default class UploadInterface extends Component {
 
     getLastActiveInput() {
         return this.tagInputs.getLastActiveInput()
+    }
+
+    getFileUrl() {
+        return this.fileUpload.getUrl()
+    }
+
+    setFileUrl(fileUrl: string) {
+        this.fileUpload.setUrl(fileUrl)
+    }
+
+    containsTags() {
+        return this.tagInputs.getTags().length > 0
     }
 
     isEmpty() {

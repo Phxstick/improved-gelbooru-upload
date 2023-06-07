@@ -15,27 +15,28 @@
   }
 }
 
-.paste-file-field {
+.paste-field {
   display: flex;
   flex-direction: row;
   align-items: center;
   cursor: pointer;
   color: #aaa;
 
-  .paste.icon, .paste-message, .paste-error-message {
+  .paste.icon, .status-message {
     padding: 7px;
     padding-left: 12px;
     user-select: none;
   }
-  .paste-message, .paste-error-message {
+  .status-message {
     padding-right: 12px;
     display: none;
   }
-  .paste-message {
+  .status-message:not(.failure) {
     color: #707070;
-  }
-  .paste-error-message {
-    display: none;
+
+    &.downloading {
+      color: darkslateblue;
+    }
   }
   .hidden-input {
     width: 0;
@@ -43,8 +44,8 @@
     padding: 0;
   }
 
-  &:focus-within {
-    .paste-message {
+  &:focus-within:not(.show-message) {
+    .paste-info {
       display: block;
     }
     .paste.icon {
@@ -52,11 +53,23 @@
     }
   }
 
-  &.show-paste-error {
-    .paste-error-message {
-      display: block;
+  &.show-message {
+    &.paste-error {
+      .status-message.paste-error {
+        display: block;
+      }
     }
-    .paste-message {
+    &.download-error {
+      .status-message.download-error {
+        display: block;
+      }
+    }
+    &.downloading {
+      .status-message.downloading {
+        display: block;
+      }
+    }
+    .paste.icon {
       display: none;
     }
   }
