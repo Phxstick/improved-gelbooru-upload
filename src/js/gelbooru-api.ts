@@ -1,4 +1,4 @@
-import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult } from "js/types"
+import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, ServerError } from "js/types"
 import { wikiPageToHtml, unescapeHtml } from "js/utility"
 import IQDB from "js/iqdb-search"
 
@@ -256,6 +256,9 @@ export default class GelbooruApi implements BooruApi {
                 "limit": Math.min(limit, pageSize).toString()
             })
             const response = await fetch(baseUrl + params.toString())
+            if (!response.ok) {
+                throw new ServerError(response.status, response.statusText)
+            }
             const data = await response.json() as QueryResponse
             if (data.post === undefined) return []
             const results = Array.isArray(data.post) ? data.post : [data.post]

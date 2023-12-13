@@ -122,6 +122,16 @@ export class AuthError extends Error {
     }
 }
 
+export class ServerError extends Error {
+    public status: number
+
+    constructor(status: number, statusText: string) {
+        super(`HTTP Error ${status}: ${statusText}`)
+        this.name = "ServerError"
+        this.status = status
+    }
+}
+
 export interface StatusUpdate {
     host: HostName
     pixivId: string

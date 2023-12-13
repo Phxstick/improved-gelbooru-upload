@@ -79,6 +79,11 @@ a.ui.label {
 }
 
 .ui.multiple.dropdown > .label.rare {
-  box-shadow: 0 0 0 1px red inset;
+  box-shadow: 0 0 0 1px red inset, 0 0 3px 0px red;
+  color: red;
+}
+
+.ui.multiple.dropdown > .label.banned {
+  box-shadow: 0 0 0 2px red inset, 0 0 3px 1px red;
   color: red;
 }

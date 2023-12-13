@@ -55,8 +55,10 @@ export default class WikiModal {
     private readonly modalLoader =
         E("div", { class: "ui huge loader shadowed hidden" })
 
+    private isOpen = false
     private loading = false
     private abortLoading = () => {}
+    private lastFocussed: Element | null = null
 
     private readonly maxHistorySize = 10
     private history: HistoryEntry[]  = []
@@ -67,11 +69,15 @@ export default class WikiModal {
         document.body.appendChild(this.root)
         $(this.root).modal({
             duration: 180,
-            // Save scroll position when modal is closed
+            // Save scroll position and restore focus when modal is closed
             onHide: () => {
                 if (this.historyIndex < 0) return
                 const scrollPos = this.content.scrollTop
                 this.history[this.historyIndex].scrollPos = scrollPos
+                this.isOpen = false
+                if (this.lastFocussed)
+                    (this.lastFocussed as HTMLElement).focus()
+                this.lastFocussed = null
             }
         })
 
@@ -300,6 +306,10 @@ export default class WikiModal {
             this.content.appendChild(postsContainer)
         }
         this.content.scrollTop = scrollPos
+
+        if (!this.isOpen)
+            this.lastFocussed = document.activeElement
+        this.isOpen = true
 
         $(this.root).dimmer("hide")
         $(this.root).modal("show")

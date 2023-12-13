@@ -1,4 +1,4 @@
-import createImageUpload, { FileUpload, CheckResult, FileUploadCallback, StatusCheckCallback } from "js/components/file-upload";
+import createImageUpload, { FileUpload, CheckResult, FileUploadCallback, CheckResultCallback, CheckStartCallback } from "js/components/file-upload";
 import TagInputs from "js/components/tag-inputs";
 import ArtistSearch from "js/components/artist-search"
 import WikiModal from "js/components/wiki-modal"
@@ -38,7 +38,8 @@ export default class UploadInterface extends Component {
             separateTagsWithSpace,
             searchDelay
         })
-        this.artistSearch = new ArtistSearch(this.tagInputs.getFirst(), this.fileUpload)
+        this.artistSearch = new ArtistSearch(
+            this.tagInputs.getFirst(), this.fileUpload, api)
         this.ratingSelection = new RadioButtons({
             // Name needs to be different across instances, otherwise all radiobuttons
             // will be associated with each other and only one will be globally active
@@ -138,8 +139,12 @@ export default class UploadInterface extends Component {
         this.fileUpload.addFileUploadListener(onFileUpload)
     }
 
-    addStatusCheckListener(onStatusCheck: StatusCheckCallback) {
-        this.fileUpload.addStatusCheckListener(onStatusCheck)
+    addCheckResultListener(onCheckResult: CheckResultCallback) {
+        this.fileUpload.addCheckResultListener(onCheckResult)
+    }
+
+    addCheckStartListener(onCheckStart: CheckStartCallback) {
+        this.fileUpload.addCheckStartListener(onCheckStart)
     }
 
     getGroupedTags(): EnhancedTags {

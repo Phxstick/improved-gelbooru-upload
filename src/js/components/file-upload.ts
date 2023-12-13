@@ -5,7 +5,14 @@ import { BooruApi, BooruPost, HostName, StatusUpdate, Message } from "js/types";
 import "./file-upload.scss";
 
 export type FileUploadCallback = (objectUrl: string) => void
-export type StatusCheckCallback = (matchIds: number[] | undefined) => void
+export type CheckResultCallback = (matchIds: number[] | undefined) => void
+export type CheckStartCallback = (checkType: CheckType) => void
+
+export enum CheckType {
+    md5hash = "md5hash",
+    source = "source",
+    iqdb = "iqdb"
+}
 
 export interface CheckResult {
     postIds?: number[]
@@ -30,7 +37,8 @@ export interface FileUpload {
     getLargeImagePreview: () => HTMLElement
     handleDropData: (dataTransfer: DataTransfer) => Promise<CheckResult>,
     addFileUploadListener: (callback: FileUploadCallback) => void,
-    addStatusCheckListener: (callback: StatusCheckCallback) => void
+    addCheckStartListener: (callback: CheckStartCallback) => void,
+    addCheckResultListener: (callback: CheckResultCallback) => void
 }
 
 export default function createImageUpload(sourceInput: HTMLInputElement, api: BooruApi): FileUpload {
@@ -40,7 +48,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     let objectUrl = ""
     let onCheckedResolve: (value: CheckResult) => void = () => {}
     const uploadListeners: FileUploadCallback[] = []
-    const statusCheckListeners: StatusCheckCallback[] = []
+    const checkStartListeners: CheckStartCallback[] = []
+    const checkResultListeners: CheckResultCallback[] = []
 
     // Create hidden file input with a label for custom styling
     const fileInput = E("input", {
@@ -291,7 +300,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     ])
 
     const emitStatusUpdate = (postIds: number[], postsList?: BooruPost[]) => {
-        statusCheckListeners.forEach(listener => listener(postIds))
+        checkResultListeners.forEach(listener => listener(postIds))
         const posts: { [key in number]: BooruPost } = {}
         if (postsList) postsList.forEach(post => { posts[post.id] = post })
         onCheckedResolve({ postIds, posts })
@@ -309,7 +318,9 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         })
     }
 
-    const performMd5Search = async (arrayBuffer: ArrayBuffer) => {
+    const performMd5Search = async (file: File) => {
+        checkStartListeners.forEach(listener => listener(CheckType.md5hash))
+        const arrayBuffer = await file.arrayBuffer()
         const md5 = new Md5()
         md5.appendByteArray(new Uint8Array(arrayBuffer))
         const md5hash = md5.end()
@@ -334,6 +345,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     }
     
     const performSourceSearch = async (pixivId: string): Promise<boolean> => {
+        checkStartListeners.forEach(listener => listener(CheckType.source))
         sourceMatchesContainer.classList.add("hidden")
         sourceMatchesHeader.classList.add("hidden")
         sourceMatchesWrapper.classList.remove("hidden")
@@ -378,7 +390,53 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         return true
     }
 
+    async function shrinkImage(file: File, factor: number): Promise<File> {
+        return new Promise((resolve, reject) => {
+            const img = new Image()
+            img.onload = () => {
+                const canvas = document.createElement("canvas")
+                canvas.width = img.width * factor
+                canvas.height = img.height * factor
+                console.log(`Original image dimensions: ${img.width} x ${img.height}`)
+                console.log(`----------------------------------`)
+                console.log(`New image dimensions: ${canvas.width} x ${canvas.height}`)
+                const ctx = canvas.getContext("2d")
+                if (!ctx) {
+                    reject()
+                    return
+                }
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+                canvas.toBlob(blob => {
+                    if (!blob) { reject(); return }
+                    resolve(new File([blob], file.name, { type: blob.type }))
+                }, file.type)
+            }
+            img.src = objectUrl
+        })
+    }
+
+    async function shrinkImageFile(file: File, maxSize: number): Promise<File> {
+        const originalSize = file.size
+        const origSizeMiB = (originalSize / (1024 ** 2)).toFixed(2)
+        console.log(`Original image: ${file.type}, ${origSizeMiB} MiB`)
+        let factor = 1
+        do {
+            factor -= 0.1
+            file = await shrinkImage(file, factor)
+            const shrunkSize = file.size
+            const shrunkSizeMiB = (file.size / (1024 ** 2)).toFixed(2)
+            const shrinkPercentage = ((factor * factor) * 100).toFixed()
+            const factorString = factor.toFixed(1)
+            console.log(`Shrink percentage: ${shrinkPercentage}% (factor ${factorString})`)
+            console.log(`Resized image: ${file.type}, ${shrunkSizeMiB} MiB`)
+            const percentage = ((1 - (shrunkSize / originalSize)) * 100).toFixed()
+            console.log(`Size reduction: ${percentage}%`)
+        } while (file.size > maxSize)
+        return file
+    }
+
     async function performIqdbSearch(file: File) {
+        checkStartListeners.forEach(listener => listener(CheckType.iqdb))
         startIqdbSearch.classList.add("hidden")
         // Hide source matches to make space for IQDB matches
         sourceMatchesContainer.classList.add("hidden")
@@ -389,11 +447,21 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         iqdbMatchesHeader.classList.add("hidden")
         iqdbMatchesWrapper.classList.remove("hidden")
 
+        // Shrink the image if it's too large for IQDB
+        const maxSize = 8192 * 1024
+        let fileUrl = objectUrl
+        if (file.size > maxSize) {
+            file = await shrinkImageFile(file, maxSize)
+            fileUrl = URL.createObjectURL(file)
+            console.log("Shrunk image URL:", fileUrl)
+        }
+
         const searchResult = await api.searchIqdb({
             host: api.host,
-            fileUrl: objectUrl,
+            fileUrl,
             filename: file.name
         })
+        //// if (fileUrl !== objectUrl) URL.revokeObjectURL(fileUrl)
         searchingIqdbMessage.classList.add("hidden")
         iqdbMatchesHeader.classList.remove("hidden")
 
@@ -401,7 +469,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             iqdbMatchesHeader.classList.add("failure")
             iqdbMatchesHeader.textContent = searchResult.error
             onCheckedResolve({ error: searchResult.error })
-            statusCheckListeners.forEach(listener => listener(undefined))
+            checkResultListeners.forEach(listener => listener(undefined))
             return
         }
         const matches = searchResult.matches
@@ -452,16 +520,15 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
 
         if (api.isAuthenticated()) {
             // Calculate MD5 and check if it already exists
-            const arrayBuffer = await file.arrayBuffer()
             let foundMatch
             try {
-                foundMatch = await performMd5Search(arrayBuffer)
+                foundMatch = await performMd5Search(file)
             } catch {
                 const error = "MD5 hash check failed."
                 hashCheckErrorMessage.classList.remove("hidden")
                 hashCheckErrorMessage.innerHTML = error
                 onCheckedResolve({ error })
-                statusCheckListeners.forEach(listener => listener(undefined))
+                checkResultListeners.forEach(listener => listener(undefined))
                 return
             }
 
@@ -546,6 +613,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         getPixivId: () => loadedPixivId,
         handleDropData,
         addFileUploadListener: (listener) => uploadListeners.push(listener),
-        addStatusCheckListener: (listener) => statusCheckListeners.push(listener)
+        addCheckStartListener: (listener) => checkStartListeners.push(listener),
+        addCheckResultListener: (listener) => checkResultListeners.push(listener)
     }
 }

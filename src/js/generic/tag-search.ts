@@ -106,8 +106,8 @@ export default class TagSearch<Completion extends BaseCompletion> extends Compon
                     this[0].dataset.type = outerThis.nextTagType
                     outerThis.nextTagType = undefined
                 }
-                if (outerThis.artistBanned) {
-                    this[0].dataset.banned = "true"
+                if (outerThis.artistBanned !== undefined) {
+                    this[0].dataset.banned = outerThis.artistBanned.toString()
                     outerThis.artistBanned = undefined
                 }
                 return this
@@ -404,7 +404,7 @@ export default class TagSearch<Completion extends BaseCompletion> extends Compon
     addSelected(value: string, type?: string, isBanned?: boolean, triggerListeners=true) {
         if (!triggerListeners) this.listenersDisabled = true
         if (type) this.nextTagType = type
-        if (isBanned) this.artistBanned = true
+        if (isBanned !== undefined) this.artistBanned = isBanned
         $(this.dropdown).dropdown("set selected", [value])
         if (!triggerListeners) this.listenersDisabled = false
     }

@@ -4,6 +4,7 @@ import WikiModal from "js/components/wiki-modal"
 import { BooruApi, TagType, TagInfo, HostName, EnhancedTags } from "js/types";
 import { E } from "js/utility";
 import "./tag-inputs.scss"
+import DanbooruApi from "js/danbooru-api";
 
 // Create a popup menu for choosing a different tag type
 function openTagTypePopup(tagElement: HTMLElement, api: BooruApi) {
@@ -240,21 +241,23 @@ export default class TagInputs {
         innerSearchEntry.addEventListener("paste", async (event) => {
             if (!event.clipboardData) return null
             event.preventDefault()
+            event.stopImmediatePropagation()
             const text = event.clipboardData.getData("text")
             let tagNames = text.trim().split(" ")
+            tagNames = tagNames.filter(tag => !this.tags.has(tag))
             if (!options.separateTagsWithSpace)
                 tagNames = tagNames.map(tagName => tagName.replaceAll("_", " "))
-            const existingTags = new Set(tagSearch.getValues())
             this.pastingTags = true
             tagSearch.addValues(tagNames)
             this.pastingTags = false
 
             // Get information about all new tags with a single request
+            const newTagsSet = new Set(tagNames)
             const tagInfos = await this.api.getMultipleTagInfos(tagNames)
             const tagElements = tagSearch.getTagElements()
             for (const tagElement of tagElements) {
                 const tagName = tagElement.dataset.value!
-                if (existingTags.has(tagName)) continue
+                if (!newTagsSet.has(tagName)) continue
                 const tagKey = tagName.replaceAll(" ", "_")
                 const tagInfo = tagInfos.get(tagKey)
                 this.applyTagInfo(tagInfo, tagElement)
@@ -266,10 +269,13 @@ export default class TagInputs {
         this.container.appendChild(row)
     }
 
-    applyTagInfo(tagInfo: TagInfo | undefined, label: HTMLElement) {
+    async applyTagInfo(tagInfo: TagInfo | undefined, label: HTMLElement) {
         if (tagInfo === undefined) {
             tagInfo = { title: "", postCount: 0, type: "tag" }
         }
+
+        // Set tag type in the element data for styling
+        label.dataset.type = tagInfo.type
 
         // Warn user if tag is deprecated or if its post count is below the
         // specified threshold
@@ -293,18 +299,25 @@ export default class TagInputs {
         }
 
         // Warn user if the tag is a banned artist (only relevant for Danbooru)
-        if (this.api.host === HostName.Danbooru && label.dataset.banned) {
-            label.classList.add("rare")
-            $(label).popup({
-                content: "This artist has been banned on Danbooru.",
-                onShow: function () { this[0].classList.add("warning") }
-            })
-            $(label).popup("show")
-            window.setTimeout(() => $(label).popup("hide"), 2500)
+        if (this.api instanceof DanbooruApi && tagInfo.type === "artist") {
+            let isBanned: boolean
+            if (label.dataset.banned) {
+                isBanned = label.dataset.banned === "true"
+            } else {
+                const tagName = tagInfo.title.replaceAll(" ", "_")
+                const artistInfo = await this.api.getArtistInfo(tagName)
+                isBanned = artistInfo !== null && artistInfo.isBanned
+            }
+            if (isBanned) {
+                label.classList.add("rare", "banned")
+                $(label).popup({
+                    content: "This artist has been banned on Danbooru.",
+                    onShow: function () { this[0].classList.add("warning", "banned") }
+                })
+                $(label).popup("show")
+                window.setTimeout(() => $(label).popup("hide"), 2500)
+            }
         }
-
-        // Set tag type in the element data for styling
-        label.dataset.type = tagInfo.type
     }
 
     getActiveTags(): HTMLElement[] {

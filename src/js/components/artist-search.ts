@@ -5,22 +5,31 @@ import DropdownMenu from "js/generic/dropdown-menu";
 import { E } from "js/utility"
 import "./artist-search.scss"
 import { FileUpload } from "js/components/file-upload";
-import { Message, TagInfo } from "js/types";
+import { BooruApi, HostName, TagInfo } from "js/types";
+import DanbooruApi from "js/danbooru-api";
 
 const RECENT_ARTISTS_KEY = "recentlySearchedArtists"
 
 export default class ArtistSearch extends Component {
+    private api: DanbooruApi
     private tagInput: TagSearch<TagInfo>
     private searchField: HTMLInputElement
     private recentlySearchedArtists: DropdownMenu
     private searching: boolean
     private quickSearchPossible: boolean
 
-    constructor(tagInput: TagSearch<TagInfo>, fileUpload: FileUpload) {
+    constructor(tagInput: TagSearch<TagInfo>, fileUpload: FileUpload, api?: BooruApi) {
         super()
         this.searching = false
         this.quickSearchPossible = false
         this.tagInput = tagInput
+
+        // Use existing API instance if on Danbooru, otherwise create a new one
+        if (api && api.host === HostName.Danbooru) {
+            this.api = api as DanbooruApi
+        } else {
+            this.api = new DanbooruApi()
+        }
 
         // Create elements
         this.searchField = E("input", {
@@ -149,41 +158,27 @@ export default class ArtistSearch extends Component {
         this.setStatus("Searching...")
         this.searching = true
 
-        // Send query to Danbooru's artist database and parse HTML response
-        let tags: { name: string, isBanned: boolean }[]
+        // Send query to Danbooru's artist database
+        let artistTags
         try {
-            const response = await browser.runtime.sendMessage({
-                type: Message.GetArtistTag,
-                args: { url }
-            })
-            const parser = new DOMParser()
-            const doc = parser.parseFromString(response.html, "text/html")
-            const table = doc.querySelector("#artists-table tbody")!
-            const rows = [...table.querySelectorAll("tr")]
-            if (rows.length === 0) {
-                this.setStatus("No artist tag with the given URL exists.", "failure")
-                this.searchField.disabled = false
-                this.searching = false
-                return false
-            }
-            tags = rows.map(row => {
-                const nameCol = row.querySelector("td.name-column a")!
-                const statusCol = row.querySelector("td.status-column a")
-                return {
-                    name: nameCol.textContent!.replaceAll("_", " "),
-                    isBanned: statusCol ? statusCol.textContent === "Banned" : false
-                }
-            })
+            artistTags = await this.api.searchArtistByUrl(url)
         } catch (error) {
             this.setStatus("Failed to search for tags.", "failure")
             this.searchField.disabled = false
             this.searching = false
             return false
         }
-        const tagNames = tags.map(tag => tag.name)
+        if (artistTags.length === 0) {
+            this.setStatus("Couldn't find artist tag with the given URL.", "failure")
+            this.searchField.disabled = false
+            this.searching = false
+            return false
+        }
+        const tagNames = artistTags.map(artist => artist.name)
 
         // Insert artist tags into the first tag input, update status message
-        tags.forEach(tag => this.tagInput.addSelected(tag.name, "artist", tag.isBanned))
+        artistTags.forEach(artist =>
+            this.tagInput.addSelected(artist.name, "artist", artist.isBanned))
         const tag_s = tagNames.length === 1 ? "tag" : "tags"
         this.setStatus(`Found following ${tag_s}: ` + tagNames.join(", "), "success")
         

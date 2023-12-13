@@ -3,8 +3,7 @@ import SettingsManager from "js/settings-manager";
 import { HostName, StatusUpdate, Message } from "js/types";
 import { getApi } from "js/api"
 
-// const PIXIV_EXTENSION = "hbghinibnihlfahabmgdanonolmihbko"
-const PIXIV_EXTENSION = "bpglogcjlfchmgbmipjfagbhcpeamhpe"
+const PIXIV_EXTENSION = "hbghinibnihlfahabmgdanonolmihbko"
 
 const associatedExtensions = [
     PIXIV_EXTENSION,
@@ -14,9 +13,16 @@ const uploadTabKeys: { [key in HostName]: string } = {
     [HostName.Danbooru]: "danbooruUploadTabs"
 }
 
-async function queryArtistDatabase(artistUrl: string): Promise<string> {
+async function queryArtistDatabase(
+        query: { url?: string, name?: string }): Promise<string> {
     const url = new URL("https://danbooru.donmai.us/artists")
-    url.searchParams.set("search[url_matches]", artistUrl)
+    if (query.url && !query.name) {
+        url.searchParams.set("search[url_matches]", query.url)
+    } else if (query.name && !query.url) {
+        url.searchParams.set("search[name]", query.name)
+    } else {
+        throw new Error("Artist query must contain either a URL or name.")
+    }
     url.searchParams.set("search[order]", "created_at")
     url.searchParams.set("commit", "Search")
     const response = await fetch(url.toString())
@@ -88,7 +94,7 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
         return queryIqdb(args.host, args.fileUrl, args.filename)
 
     } else if (request.type === Message.GetArtistTag) {
-        return { html: await queryArtistDatabase(args.url) }
+        return { html: await queryArtistDatabase(args) }
 
     } else if (request.type === Message.OpenExtensionOptions) {
         browser.runtime.openOptionsPage()

@@ -142,6 +142,13 @@ export default class ContextMenu<DataType=HTMLElement> {
         this.isOpen = false;
     }
 
+    attachTo(element: HTMLElement, data: DataType) {
+        element.addEventListener("contextmenu", (event) => {
+            if (event.target !== element) return
+            this.open(event, data)
+        })
+    }
+
     attachToMultiple(rootElement: HTMLElement, selector: string,
             dataExtractor: (element: HTMLElement) => DataType) {
         rootElement.addEventListener("contextmenu", (event) => {

@@ -1,5 +1,6 @@
-import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult } from "js/types"
+import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, Message, ServerError } from "js/types"
 import IQDB from "js/iqdb-search"
+import browser, { search } from "webextension-polyfill";
 import { wikiPageToHtml, unescapeHtml } from "js/utility"
 
 const origin = "https://danbooru.donmai.us"
@@ -88,6 +89,19 @@ interface WikiPage {
     is_locked: boolean
     created_at: string
     updated_at: string
+}
+
+interface RawArtistInfo {
+    id: number
+    name: string
+    other_names: string[]
+    is_banned: boolean
+    is_deleted: boolean
+}
+
+interface ArtistInfo {
+    name: string
+    isBanned: boolean
 }
 
 const numberToTagType: { [key in number]: TagType } = {
@@ -416,5 +430,62 @@ export default class DanbooruApi implements BooruApi {
             body: JSON.stringify({ pool: { post_ids: postIds } })
         })
         return response.ok
+    }
+
+    private async searchArtistViaForm(
+        query: { url?: string, name?: string }
+    ): Promise<ArtistInfo[]> {
+        const response = await browser.runtime.sendMessage({
+            type: Message.GetArtistTag,
+            args: query 
+        })
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(response.html, "text/html")
+        const table = doc.querySelector("#artists-table tbody")!
+        const rows = [...table.querySelectorAll("tr")]
+        return rows.map(row => {
+            const nameCol = row.querySelector("td.name-column a")!
+            const statusCol = row.querySelector("td.status-column a")
+            return {
+                name: nameCol.textContent!.replaceAll("_", " "),
+                isBanned: statusCol ? statusCol.textContent === "Banned" : false
+            }
+        })
+    }
+
+    private async searchArtistViaApi(
+        query: { url?: string, name?: string }
+    ): Promise<ArtistInfo[]> {
+        let params
+        if (query.url && !query.name) {
+            params = new URLSearchParams({ "search[url_matches]": query.url })
+        } else if (query.name && !query.url) {
+            params = new URLSearchParams({ "search[name_eq]": query.name })
+        } else {
+            throw new Error("Artist query must contain either a URL or name.")
+        }
+        const apiUrl = origin + "/artists.json?" + params.toString()
+        const response = await fetch(apiUrl, {
+            credentials: "same-origin"  // Send cookies instead of API key
+        })
+        const infos = await response.json() as RawArtistInfo[] 
+        return infos.map(info => ({
+            name: info.name,
+            isBanned: info.is_banned
+        }))
+    }
+
+    async searchArtistByUrl(url: string): Promise<ArtistInfo[]> {
+        const searchFunc = this.credentials ?
+            this.searchArtistViaApi : this.searchArtistViaForm
+        return searchFunc({ url })
+    }
+
+    async getArtistInfo(name: string): Promise<ArtistInfo | null> {
+        const searchFunc = this.credentials ?
+            this.searchArtistViaApi : this.searchArtistViaForm
+        const infos = await searchFunc({ name })
+        if (infos.length === 0) return null
+        return infos[0]
     }
 }

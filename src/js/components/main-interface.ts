@@ -21,8 +21,9 @@ type TabDataStore = {
 export enum TabStatus {
     Empty = "empty",
     Checking = "checking",
-    Checked = "checked",
     CheckFailed = "check-failed",
+    Matched = "matched",
+    Uploadable = "uploadable",
     Uploading = "uploading",
     UploadSuccess = "upload-success",
     UploadFailed = "upload-failed"
@@ -70,9 +71,38 @@ export default class MainInterface extends Component {
         })
         this.tabsContainer = tabsContainer
 
+        const addTabButton = E("div", { class: "tab add-tab-button" }, [
+            E("div", { class: "tab-status" }, "+")
+        ])
+        addTabButton.addEventListener("click", () => this.addTab())
+
+        const tabsWrapper = E("div", { class: "tabs-wrapper" }, [
+            tabsContainer, addTabButton
+        ])
+        this.tabsWrapper = tabsWrapper
+        if (!settings.showTabs) tabsWrapper.classList.add("hidden")
+
         const tabSelection = new Selection(tabsContainer, {
-            isSelectable: (el) => el.classList.contains("tab")
+            isSelectable: (el) => el.classList.contains("tab"),
+            associatedElements: new Set([tabsWrapper])
         })
+
+        const tabsWrapperContextMenu = new ContextMenu([
+            { title: "Close unneeded tabs", action: () => {
+                const tabs = new Set<HTMLElement>()
+                for (const child of this.tabsContainer.children) {
+                    const tab = child as HTMLElement
+                    const status = this.tabToStatus.get(tab)
+                    if (status === TabStatus.Empty ||
+                            status === TabStatus.UploadSuccess ||
+                            status === TabStatus.Matched) {
+                        tabs.add(tab)
+                    }
+                }
+                this.closeMultipleTabs(tabs)
+            } }
+        ])
+        tabsWrapperContextMenu.attachTo(tabsWrapper, tabsWrapper)
 
         const multipleTabsSelected = (tab: HTMLElement) =>
             tabSelection.contains(tab) && tabSelection.size() > 1
@@ -92,53 +122,13 @@ export default class MainInterface extends Component {
                 return !multipleTabsSelected(tab) && copiedTags !== undefined
             } },
             { title: "Close tab", icon: "trash", action: (tab) => {
-                if (this.selectedTab === tab) {
-                    if (tab.previousElementSibling !== null) {
-                        this.selectTab(tab.previousElementSibling as HTMLElement)
-                    } else if (tab.nextElementSibling !== null) {
-                        this.selectTab(tab.nextElementSibling as HTMLElement)
-                    } else {
-                        this.addTab()
-                    }
-                }
-                tab.remove()
-                if (tabsContainer.children.length === 1 && !this.settings.showTabs) {
-                    this.mainWrapper.classList.remove("partial-scrolling")
-                    this.tabsWrapper.classList.add("hidden")
-                }
+                this.closeTab(tab)
             }, condition: (tab) => {
                 return !multipleTabsSelected(tab)
             } },
 
             { title: "Close selected", icon: "trash", action: () => {
-                let prevTab: HTMLElement | null = this.selectedTab
-                while (true) {
-                    prevTab = prevTab.previousElementSibling as HTMLElement | null
-                    if (prevTab === null) break
-                    if (tabSelection.contains(prevTab)) continue
-                    this.selectTab(prevTab as HTMLElement)
-                    break
-                }
-                if (prevTab === null) {
-                    let nextTab: HTMLElement | null = this.selectedTab
-                    while (true) {
-                        nextTab = nextTab.nextElementSibling as HTMLElement | null
-                        if (nextTab === null) break
-                        if (tabSelection.contains(nextTab)) continue
-                        this.selectTab(nextTab as HTMLElement)
-                        break
-                    }
-                    if (nextTab === null) {
-                        this.addTab()
-                    }
-                }
-                for (const otherTab of tabSelection.get()) {
-                    otherTab.remove()
-                }
-                if (tabsContainer.children.length === 1 && !this.settings.showTabs) {
-                    this.mainWrapper.classList.remove("partial-scrolling")
-                    this.tabsWrapper.classList.add("hidden")
-                }
+                this.closeMultipleTabs(tabSelection.get())
             }, condition: (tab) => {
                 return multipleTabsSelected(tab)
             } },
@@ -175,11 +165,6 @@ export default class MainInterface extends Component {
         ])
         tabContextMenu.attachToMultiple(tabsContainer, ".tab", (e) => e)
 
-        const addTabButton = E("div", { class: "tab add-tab-button" }, [
-            E("div", { class: "tab-status" }, "+")
-        ])
-        addTabButton.addEventListener("click", () => this.addTab())
-
         // Make it possible to drag pictures on new-tab-button as a shortcut
         addTabButton.addEventListener("dragover", (event) => {
             event.preventDefault()
@@ -198,12 +183,6 @@ export default class MainInterface extends Component {
         addTabButton.addEventListener("dragleave", () => {
             addTabButton.classList.remove("dragover")
         })
-
-        const tabsWrapper = E("div", { class: "tabs-wrapper" }, [
-            tabsContainer, addTabButton
-        ])
-        this.tabsWrapper = tabsWrapper
-        if (!settings.showTabs) tabsWrapper.classList.add("hidden")
 
         const interfaceWrapper = E("div", { class: "interface-wrapper" })
         this.interfaceWrapper = interfaceWrapper
@@ -369,9 +348,6 @@ export default class MainInterface extends Component {
         this.interfaceWrapper.appendChild(instanceElement)
         uploadInstance.addFileUploadListener(async (objectUrl) => {
             imagePreview.src = objectUrl
-            statusContainer.classList.remove("success", "failure", "uploaded")
-            statusContainer.textContent = "Checking..."
-            this.setTabStatus(tab, TabStatus.Checking)
             uploadInstance.clearPixivTags()
 
             // Load saved data if available
@@ -389,7 +365,12 @@ export default class MainInterface extends Component {
             })
             uploadInstance.insertGroupedTags(tabData.tags)
         })
-        uploadInstance.addStatusCheckListener((matchIds) => {
+        uploadInstance.addCheckStartListener((checkType) => {
+            statusContainer.classList.remove("success", "failure", "uploaded")
+            statusContainer.textContent = "Checking..."
+            this.setTabStatus(tab, TabStatus.Checking)
+        })
+        uploadInstance.addCheckResultListener((matchIds) => {
             const status = this.tabToStatus.get(tab)
             if (status !== TabStatus.Checking) return
             if (matchIds === undefined) {
@@ -398,14 +379,15 @@ export default class MainInterface extends Component {
                 this.setTabStatus(tab, TabStatus.CheckFailed)
                 return
             }
-            this.setTabStatus(tab, TabStatus.Checked)
             if (matchIds.length === 0) {
                 statusContainer.textContent = `Checked ✔`
                 statusContainer.classList.add("success")
+                this.setTabStatus(tab, TabStatus.Uploadable)
             } else {
                 statusContainer.textContent = matchIds.length === 1 ?
                     `1 match` : `${matchIds.length} matches`
                 statusContainer.classList.add("failure")
+                this.setTabStatus(tab, TabStatus.Matched)
             }
         })
         if (this.tabsContainer.children.length > 1 && !this.settings.showTabs) {
@@ -416,7 +398,62 @@ export default class MainInterface extends Component {
         return tab
     }
 
+    closeTab(tab: HTMLElement) {
+        if (this.selectedTab === tab) {
+            if (tab.previousElementSibling !== null) {
+                this.selectTab(tab.previousElementSibling as HTMLElement)
+            } else if (tab.nextElementSibling !== null) {
+                this.selectTab(tab.nextElementSibling as HTMLElement)
+            } else {
+                this.addTab()
+            }
+        }
+        tab.remove()
+        if (this.tabsContainer.children.length === 1 && !this.settings.showTabs) {
+            this.mainWrapper.classList.remove("partial-scrolling")
+            this.tabsWrapper.classList.add("hidden")
+        }
+    }
+
+    closeMultipleTabs(tabs: Set<HTMLElement>) {
+        // If the currently open tab is among the deleted, find a new one to open
+        if (tabs.has(this.selectedTab)) {
+            // First, try to find a remaining tab among the following ones
+            let prevTab: HTMLElement | null = this.selectedTab
+            while (true) {
+                prevTab = prevTab.previousElementSibling as HTMLElement | null
+                if (prevTab === null) break
+                if (tabs.has(prevTab)) continue
+                this.selectTab(prevTab as HTMLElement)
+                break
+            }
+            // If no tab was found, try to find one among the previous tabs
+            if (prevTab === null) {
+                let nextTab: HTMLElement | null = this.selectedTab
+                while (true) {
+                    nextTab = nextTab.nextElementSibling as HTMLElement | null
+                    if (nextTab === null) break
+                    if (tabs.has(nextTab)) continue
+                    this.selectTab(nextTab as HTMLElement)
+                    break
+                }
+                // If there's no tab left to open, create a new empty one
+                if (nextTab === null) {
+                    this.addTab()
+                }
+            }
+        }
+        for (const tab of tabs) {
+            tab.remove()
+        }
+        if (this.tabsContainer.children.length === 1 && !this.settings.showTabs) {
+            this.mainWrapper.classList.remove("partial-scrolling")
+            this.tabsWrapper.classList.add("hidden")
+        }
+    }
+
     async uploadTabs(tabs: HTMLElement[]): Promise<number[] | undefined> {
+        // Check if all tabs contain valid data
         let encounteredError = false
         for (const tab of tabs) {
             const statusContainer = tab.querySelector(".tab-status")!
