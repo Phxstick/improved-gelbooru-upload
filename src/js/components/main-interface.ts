@@ -1,12 +1,13 @@
 import browser from "webextension-polyfill";
-import { E, showInfoModal, showConfirmModal } from "js/utility"
-import { Settings, BooruApi, AuthError, StatusUpdate, Message, EnhancedTags } from "js/types"
+import { E, showInfoModal, showConfirmModal, imageToCanvas, loadImage } from "js/utility"
+import { Settings, BooruApi, AuthError, StatusUpdate, MessageType, EnhancedTags, HostName, UploadInstanceData, PixivTags } from "js/types"
 import ContextMenu from "js/generic/context-menu"
 import Component from "js/generic/component"
 import Selection from "js/generic/selection"
 import UploadInterface from "js/components/upload-interface"
-import TagInputs from "js/components/tag-inputs"
 import WikiModal from "js/components/wiki-modal"
+import { CheckResult } from "js/components/file-upload";
+import DanbooruApi from "js/danbooru-api";
 import "./main-interface.scss"
 
 type TabDataStore = {
@@ -28,6 +29,8 @@ export enum TabStatus {
     UploadSuccess = "upload-success",
     UploadFailed = "upload-failed"
 }
+
+const MAX_THUMBNAIL_SIZE = 125
 
 export default class MainInterface extends Component {
     private readonly api: BooruApi
@@ -104,6 +107,47 @@ export default class MainInterface extends Component {
         ])
         tabsWrapperContextMenu.attachTo(tabsWrapper, tabsWrapper)
 
+        // For every other image board, create a context menu item which copies
+        // over the data of selected tabs to the corresponding upload page
+        const hostToLabel: { [key in HostName]: string } = {
+            [HostName.Gelbooru]: "Gelbooru",
+            [HostName.Danbooru]: "Danbooru"
+        }
+        const otherHosts = Object.values(HostName).filter(name => name !== api.host)
+        const crossSiteItems = []
+        for (const host of otherHosts) {
+            crossSiteItems.push({
+                title: `Upload to ${hostToLabel[host]}`,
+                icon: "share",
+                action: async (tab: HTMLElement) => {
+                    const tabs = multipleTabsSelected(tab) ? tabSelection.get() : [tab]
+                    const data: UploadInstanceData[] = []
+                    for (const tab of tabs) {
+                        const instance =this.tabToInstance.get(tab)!
+                        data.push(instance.getEnhancedData())
+                    }
+                    await browser.runtime.sendMessage({
+                        type: MessageType.PrepareUpload,
+                        args: { host, data }
+                    })
+                    if (data[0].file) {
+                        browser.runtime.sendMessage({
+                            type: MessageType.FocusTab,
+                            args: { host, details: { filename: data[0].file.name } }
+                        })
+                    }
+                },
+                condition: (tab: HTMLElement) => {
+                    const tabs = multipleTabsSelected(tab) ? tabSelection.get() : [tab]
+                    for (const tab of tabs) {
+                        const instance = this.tabToInstance.get(tab)!
+                        if (instance.isEmpty()) return false
+                    }
+                    return true
+                }
+            })
+        }
+
         const multipleTabsSelected = (tab: HTMLElement) =>
             tabSelection.contains(tab) && tabSelection.size() > 1
         let copiedTags: EnhancedTags | undefined
@@ -161,7 +205,32 @@ export default class MainInterface extends Component {
                         window.alert("Failed to add posts to pool.")
                     }
                 }
-            }, condition: multipleTabsSelected }
+            }, condition: multipleTabsSelected },
+
+            { title: "Upload as parent/children", icon: "upload", action: async () => {
+                const selectedTabs = [...tabSelection.get()]
+                const postIds = await this.uploadTabs(selectedTabs)
+                if (postIds === undefined) return
+                const parentId = postIds[0]
+                const api = this.api as DanbooruApi
+                const authErrorMessage = "Not authenticated (you need to " +
+                    "set your API key and username in the extension settings)"
+                try {
+                    for (const postId of postIds.slice(1)) {
+                        await api.setParent(postId, parentId)
+                    }
+                } catch (error) {
+                    if (error instanceof AuthError) {
+                        window.alert(authErrorMessage)
+                    } else {
+                        window.alert("Failed to add posts to pool.")
+                        console.log(error)
+                    }
+                }
+            }, condition: (tab) => api.host === HostName.Danbooru
+                && multipleTabsSelected(tab) },
+
+            ...crossSiteItems
         ])
         tabContextMenu.attachToMultiple(tabsContainer, ".tab", (e) => e)
 
@@ -247,17 +316,22 @@ export default class MainInterface extends Component {
         window.addEventListener("keydown", async (event) => {
             if (event.key !== "s" || !event.ctrlKey) return
             event.preventDefault()
-            let counter = 0
+            let numAdded = 0
+            let numDeleted = 0
             const storageKey = this.tabDataStorageKey
             const storageData = await browser.storage.local.get(storageKey)
             const dataObject = (storageData[storageKey] || {}) as TabDataStore
             for (const tab of this.tabsContainer.children) {
                 const instance = this.tabToInstance.get(tab as HTMLElement)!
-                const tabStatus = this.tabToStatus.get(tab as HTMLElement)
-                if (tabStatus === TabStatus.UploadSuccess ||
-                        !instance.containsTags()) continue
                 const fileUrl = instance.getFileUrl()
                 if (!fileUrl) continue
+                const tabStatus = this.tabToStatus.get(tab as HTMLElement)
+                if (tabStatus === TabStatus.UploadSuccess ||
+                        !instance.containsTags()) {
+                    delete dataObject[fileUrl]
+                    ++numDeleted
+                    continue
+                }
                 const data = instance.getData()
                 const groupedTags = instance.getGroupedTags()
                 dataObject[fileUrl] = {
@@ -266,7 +340,7 @@ export default class MainInterface extends Component {
                     tags: groupedTags,
                     rating: data.rating
                 }
-                ++counter
+                ++numAdded
             }
             try {
                 await browser.storage.local.set({ [storageKey]: dataObject })
@@ -274,10 +348,13 @@ export default class MainInterface extends Component {
                 showInfoModal(
                     `Failed to save data<br>(probably exceeded storage quota)`)
             }
-            if (counter === 0) {
-                showInfoModal(`There is no data to save.`)
+            if (numAdded === 0 && numDeleted === 0) {
+                showInfoModal(`There is no data to save or remove.`)
             } else {
-                showInfoModal(`Saved the state of ${counter} tabs.`)
+                const strings = []
+                if (numAdded) strings.push(`Saved the state of ${numAdded} tabs.`)
+                if (numDeleted) strings.push(`Removed data for ${numDeleted} tabs.`)
+                showInfoModal(strings.join("<br>"))
             }
         })
         // If Ctrl + p is pressed, load all saved data into new tabs
@@ -330,13 +407,15 @@ export default class MainInterface extends Component {
         })
 
         this.addTab()
+        document.body.style.setProperty(
+            "--max-thumbnail-size", `${MAX_THUMBNAIL_SIZE}px`)
     }
 
     addTab(select=true) {
         const number = this.tabsContainer.children.length + 1
-        const imagePreview = E("img", { class: "small preview" }) as HTMLImageElement
+        const imagePreviewWrapper = E("div")
         const statusContainer = E("div", { class: "tab-status" }, `Tab ${number}`)
-        const tab = E("div", { class: "tab" }, [statusContainer, imagePreview])
+        const tab = E("div", { class: "tab" }, [statusContainer, imagePreviewWrapper])
         const uploadInstance = new UploadInterface(
             this.api, this.wikiModal, this.settings)
         this.tabToInstance.set(tab, uploadInstance)
@@ -347,8 +426,20 @@ export default class MainInterface extends Component {
         instanceElement.classList.add("hidden")
         this.interfaceWrapper.appendChild(instanceElement)
         uploadInstance.addFileUploadListener(async (objectUrl) => {
-            imagePreview.src = objectUrl
             uploadInstance.clearPixivTags()
+
+            // Draw a downsized thumbnail on a canvas element
+            const divisor = MAX_THUMBNAIL_SIZE * window.devicePixelRatio
+            const image = await loadImage(objectUrl)
+            const shrinkFactor = image.width > image.height ?
+                image.width / divisor : image.height / divisor
+            const thumbnail = imageToCanvas(image, {
+                width: image.width / shrinkFactor,
+                height: image.height / shrinkFactor
+            })
+            thumbnail.classList.add("thumbnail")
+            imagePreviewWrapper.innerHTML = ""
+            imagePreviewWrapper.appendChild(thumbnail)
 
             // Load saved data if available
             const storageKey = this.tabDataStorageKey
@@ -366,27 +457,23 @@ export default class MainInterface extends Component {
             uploadInstance.insertGroupedTags(tabData.tags)
         })
         uploadInstance.addCheckStartListener((checkType) => {
-            statusContainer.classList.remove("success", "failure", "uploaded")
             statusContainer.textContent = "Checking..."
             this.setTabStatus(tab, TabStatus.Checking)
         })
-        uploadInstance.addCheckResultListener((matchIds) => {
+        uploadInstance.addCheckResultListener((checkResult) => {
             const status = this.tabToStatus.get(tab)
             if (status !== TabStatus.Checking) return
-            if (matchIds === undefined) {
+            if (!checkResult.postIds) {
                 statusContainer.textContent = `Check failed`
-                statusContainer.classList.add("failure")
                 this.setTabStatus(tab, TabStatus.CheckFailed)
                 return
             }
-            if (matchIds.length === 0) {
-                statusContainer.textContent = `Checked ✔`
-                statusContainer.classList.add("success")
+            if (checkResult.postIds.length === 0) {
+                statusContainer.textContent = `Checked`
                 this.setTabStatus(tab, TabStatus.Uploadable)
             } else {
-                statusContainer.textContent = matchIds.length === 1 ?
-                    `1 match` : `${matchIds.length} matches`
-                statusContainer.classList.add("failure")
+                statusContainer.textContent = checkResult.postIds.length === 1 ?
+                    `1 match` : `${checkResult.postIds.length} matches`
                 this.setTabStatus(tab, TabStatus.Matched)
             }
         })
@@ -460,7 +547,6 @@ export default class MainInterface extends Component {
             const instance = this.tabToInstance.get(tab)!
             const error = instance.checkData() 
             if (error) {
-                statusContainer.classList.add("failure")
                 statusContainer.innerHTML = "Upload failed"
                 this.setTabStatus(tab, TabStatus.UploadFailed, error)
                 encounteredError = true
@@ -481,7 +567,6 @@ export default class MainInterface extends Component {
         // Set status of all tabs at once
         for (const tab of tabs) {
             const statusContainer = tab.querySelector(".tab-status")!
-            statusContainer.classList.remove("failure", "success", "uploaded")
             statusContainer.innerHTML = "Uploading..."
             this.setTabStatus(tab, TabStatus.Uploading, "Queued for upload...")
         }
@@ -497,7 +582,6 @@ export default class MainInterface extends Component {
             const result = await this.api.createPost(uploadData)
             if (result.successful) {
                 const postLink = `<a target="_blank" href="${result.url}">${result.postId}</a>`
-                statusContainer.classList.add("uploaded")
                 statusContainer.innerHTML = "Uploaded!"
                 this.setTabStatus(tab, TabStatus.UploadSuccess, "Upload successful! Created post with ID " + postLink)
                 resultIds.push(result.postId)
@@ -511,7 +595,7 @@ export default class MainInterface extends Component {
                         postIds: [result.postId]
                     }
                     browser.runtime.sendMessage({
-                        type: Message.NotifyAssociatedExtensions,
+                        type: MessageType.NotifyAssociatedExtensions,
                         args: statusUpdate
                     })
                 }
@@ -525,7 +609,6 @@ export default class MainInterface extends Component {
                     await browser.storage.local.set({ [storageKey]: data })
                 }
             } else {
-                statusContainer.classList.add("failure")
                 statusContainer.innerHTML = "Upload failed"
                 this.setTabStatus(tab, TabStatus.UploadFailed, result.error)
                 someUploadFailed = true
@@ -568,12 +651,23 @@ export default class MainInterface extends Component {
         const tabNumber = [...this.tabsContainer.children].indexOf(this.selectedTab) + 1
         const statusContainer = this.selectedTab.querySelector(".tab-status")!
         statusContainer.innerHTML = `Tab ${tabNumber}`
-        statusContainer.classList.remove("failure", "success", "uploaded")
     }
 
     private setTabStatus(tab: HTMLElement, status: TabStatus, text="") {
         this.tabToStatus.set(tab, status)
         this.tabToStatusMessage.set(tab, text)
+        tab.classList.remove("failure", "success", "uploaded")
+        const failStatuses =
+            [TabStatus.UploadFailed, TabStatus.Matched, TabStatus.CheckFailed]
+        let tabClass = ""
+        if (status === TabStatus.Uploadable) {
+            tabClass = "success"
+        } else if (status === TabStatus.UploadSuccess) {
+            tabClass = "uploaded"
+        } else if (failStatuses.includes(status)) {
+            tabClass = "failure"
+        }
+        if (tabClass) tab.classList.add(tabClass)
         if (tab !== this.selectedTab) return
         this.uploadButton.disabled = status === TabStatus.Uploading
                  || status === TabStatus.Empty || status === TabStatus.UploadSuccess
@@ -583,26 +677,45 @@ export default class MainInterface extends Component {
         this.uploadStatus.innerHTML = text
     }
 
-    addFile(dataTransfer: DataTransfer, pixivTags: { [key in string]: string }) {
-        let firstEmptyTab
+    async addData(dataList: UploadInstanceData[]): Promise<(CheckResult | undefined)[]> {
+        const emptyTabs: HTMLElement[] = []
+        const fileUrlToTab = new Map<string, HTMLElement>()
         for (const tab of this.tabsContainer.children) {
             const instance = this.tabToInstance.get(tab as HTMLElement)!
-            if (instance.isEmpty()) {
-                firstEmptyTab = tab as HTMLElement
-                break
+            const fileUrl = instance.getFileUrl()
+            if (fileUrl) {
+                fileUrlToTab.set(fileUrl, tab as HTMLElement)
+            } else if (instance.isEmpty()) {
+                emptyTabs.push(tab as HTMLElement)
             }
         }
-        if (!firstEmptyTab) {
-            firstEmptyTab = this.addTab(false)
+        emptyTabs.reverse()
+
+        const promises: Promise<CheckResult | undefined>[] = []
+        for (const data of dataList) {
+            let tab: HTMLElement
+            if (data.fileUrl && fileUrlToTab.has(data.fileUrl)) {
+                tab = fileUrlToTab.get(data.fileUrl)!
+            } else {
+                if (emptyTabs.length > 0) {
+                    tab = emptyTabs.pop()!
+                } else {
+                    tab = this.addTab(false)
+                }
+            }
+            if (data.file) {
+                this.filenameToTab.set(data.file.name, tab)
+                this.tabToFilename.set(tab, data.file.name)
+            }
+            const instance = this.tabToInstance.get(tab)!
+            // Important: set file URL immediately to prevent the tab from being
+            // simulataneously assigned data from other asynchronous requests.
+            // `insertEnhancedData` sets URL too, but not synchronously.
+            instance.setFileUrl(data.fileUrl || "")
+            promises.push(instance.insertEnhancedData(data))
         }
-        const filename = dataTransfer.files[0].name
-        this.filenameToTab.set(filename, firstEmptyTab)
-        this.tabToFilename.set(firstEmptyTab, filename)
-        const instance = this.tabToInstance.get(firstEmptyTab)!
-        const checkResult = instance.passDroppedFile(dataTransfer)
-        // Timeout is needed so on-upload handler doesn't immediately clear tags again
-        setTimeout(() => instance.displayPixivTags(pixivTags), 0)
-        return checkResult
+
+        return Promise.all(promises)
     }
 
     focusTabByFilename(filename: string): boolean {

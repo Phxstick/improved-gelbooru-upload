@@ -31,7 +31,7 @@ import browser from "webextension-polyfill";
 import { E } from "js/utility"
 import SettingsManager from "js/settings-manager"
 import MainInterface from "js/components/main-interface"
-import { HostName, BooruApi, Message } from "js/types"
+import { HostName, BooruApi, MessageType, UploadInstanceData } from "js/types"
 import { getApi } from "js/api"
 
 // Import font here because it doesn't work with pure CSS in a content script
@@ -53,17 +53,9 @@ async function main() {
 
         // Receive images to be uploaded from background script
         else if (request.type === "prepare-upload") {
-            const { file, url, pixivTags } = request.args
-            if (!file || !url) return null
-            const blob = await fetch(file).then(r => r.blob())
-            const urlParts = url.split("/")
-            const fileName = urlParts[urlParts.length - 1]
-            const fileObj = new File([blob], fileName, { type: "image/jpeg" })
-            const dataTransfer = new DataTransfer()
-            dataTransfer.setData("text/uri-list", url)
-            dataTransfer.items.add(fileObj)
-            const result = await mainInterface.addFile(dataTransfer, pixivTags)
-            return { ...result, host: api.host }
+            const data = request.args as UploadInstanceData[]
+            const checkResults = await mainInterface.addData(data)
+            return { checkResults }
         }
         else if (request.type === "focus-tab") {
             const { filename, host } = request.args
@@ -91,13 +83,16 @@ async function main() {
     // Body needs to be replaced on Danbooru to get rid of event listeners
     document.body = document.createElement("body")
 
+    // Add the host as class to the document body for host-dependent CSS styles
+    document.body.classList.add(`host-${api.host}`)
+
     // The interface has to be created AFTER replacing the body, because
     // elements like modals will be appended to the body during initialization
     const mainInterface = new MainInterface(api, settings)
     document.body.appendChild(mainInterface.getElement())
 
     browser.runtime.sendMessage({
-        type: Message.RegisterUploadPageTab,
+        type: MessageType.RegisterUploadPageTab,
         args: { host: api.host } 
     })
 }

@@ -75,6 +75,8 @@
     min-width: 64px;
     max-width: 135px;
     user-select: none;
+    overflow: hidden;
+    vertical-align: top;
 
     &.add-tab-button {
       .tab-status {
@@ -82,49 +84,41 @@
       }
     }
 
-    img.preview {
-      border-bottom-left-radius: 3px;
-      border-bottom-right-radius: 3px;
+    .thumbnail {
+      // border-bottom-left-radius: 3px;
+      // border-bottom-right-radius: 3px;
       display: block;  // To get rid of margin below image
-      max-width: 125px;
-      max-height: 125px;
+      max-width: var(--max-thumbnail-size);
+      max-height: var(--max-thumbnail-size);
       margin: auto;
 
-      &:not([src]) {
-        display: none;
-      }
+      // &:not([src]) {
+      //   display: none;
+      // }
     }
 
     .tab-status {
-      padding: 8px 4px;
+      padding-top: 5px;
+      padding-bottom: 7px;
+      padding-left: 2px;
+      padding-right: 2px;
       font-size: 1.2rem;
       color: #555;
       text-align: center;
       transition: color 0.15s;
-
-      &.uploaded { color: #006ffa; }
-      &.success { color: seagreen; }
-      &.failure { color: crimson; }
     }
 
     &:hover {
       .tab-status {
         color: #444;
-        &.uploaded { color: darken(#006ffa, 4%); }
-        &.success { color: darken(seagreen, 4%); }
-        &.failure { color: darken(crimson, 4%); }
       }
       background-color: lighten(lavender, 2%);
       border-color: lighten(mediumpurple, 10%);
     }
-
     &.main-selected {
       .tab-status {
         color: #222;
         text-shadow: 0 0 3px white, 0 0 3px white;
-        &.uploaded { color: darken(#006ffa, 9%); }
-        &.success { color: darken(seagreen, 9%); }
-        &.failure { color: darken(crimson, 9%); }
       }
       background-color: darken(lavender, 6%);
       border-color: mediumpurple;
@@ -133,9 +127,6 @@
       .tab-status {
         color: #333;
         text-shadow: 0 0 3px white, 0 0 3px white;
-        &.uploaded { color: darken(#006ffa, 7%); }
-        &.success { color: darken(seagreen, 7%); }
-        &.failure { color: darken(crimson, 7%); }
       }
       background-color: peachpuff;  // mistyrose;
       box-shadow: 0 0 3px 2px peachpuff;
@@ -154,6 +145,84 @@
       // }
       // background-color: darken(lavender, 1%);
       // border-color: lighten(mediumpurple, 6%);
+    }
+
+    &.success {
+      // border-color: #69b869;
+
+      .tab-status {
+        color: seagreen;
+        // color: green;
+        // background-color: #b7f2b7;
+        // text-shadow: 0 0 3px white;
+      }
+      &:hover {
+        .tab-status {
+          color: darken(seagreen, 4%);
+        }
+      }
+      &.selected {
+        .tab-status {
+          color: darken(seagreen, 7%);
+        }
+      }
+      &.main-selected {
+        .tab-status {
+          color: darken(seagreen, 9%);
+        }
+      }
+    }
+
+    &.failure {
+      // border-color: #b66060;
+
+      .tab-status {
+        color: crimson;
+        // color: darkred;
+        // background-color: #f4aeae;
+        // text-shadow: 0 0 3px white;
+      }
+      &:hover {
+        .tab-status {
+          color: darken(crimson, 4%);
+        }
+      }
+      &.selected {
+        .tab-status {
+          color: darken(crimson, 7%);
+        }
+      }
+      &.main-selected {
+        .tab-status {
+          color: darken(crimson, 9%);
+        }
+      }
+    }
+
+    &.uploaded {
+      // border-color: #549fcf;
+
+      .tab-status {
+        color: #006ffa;
+        // color: darkslateblue;
+        // background-color: #a7ddff;
+        // text-shadow: 0 0 3px white;
+      }
+      &:hover {
+        .tab-status {
+          color: darken(#006ffa, 4%);
+        }
+      }
+      &.selected {
+        .tab-status {
+          color: darken(#006ffa, 7%);
+        }
+      }
+      &.main-selected {
+        .tab-status {
+          color: darken(#006ffa, 9%);
+        }
+      }
     }
   }
 }

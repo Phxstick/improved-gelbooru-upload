@@ -1,4 +1,3 @@
-import browser from "webextension-polyfill"
 import SettingsManager from "js/settings-manager"
 import GelbooruApi from "js/gelbooru-api"
 import DanbooruApi from "js/danbooru-api"
@@ -31,3 +30,12 @@ export async function getApi(
     }
 }
 
+const hostsClasses = [GelbooruApi, DanbooruApi]
+const staticApiInstances = hostsClasses.map(Class => new Class())
+
+export function isUploadUrl(url: string) {
+    for (const apiInstance of staticApiInstances) {
+        if (apiInstance.getUploadUrl() === url) return true
+    }
+    return false
+}

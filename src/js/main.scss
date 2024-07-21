@@ -53,23 +53,40 @@
 }
 
 .styled-button {
+  appearance: none;
   -webkit-appearance: none;
   min-width: 105px;
   padding: 7px 15px;
   border-radius: 4px;
-  background-color: #0773fb;
   border: none;
   color: white;
   font-weight: bold;
 
-  &:hover:not(:disabled) {
-    background-color: blue;
-  }
   &:disabled {
     opacity: 0.4;
   }
   &:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+body.host-gelbooru {
+  .styled-button {
+    background-color: #0773fb;
+
+    &:hover:not(:disabled) {
+      background-color: blue;
+    }
+  }
+}
+
+body.host-danbooru {
+  .styled-button {
+    background-color: #aa8b6a;  // #9e8163;
+
+    &:hover:not(:disabled) {
+      background-color: #896b4b;
+    }
   }
 }
 

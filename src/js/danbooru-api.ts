@@ -1,4 +1,4 @@
-import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, Message, ServerError } from "js/types"
+import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, MessageType, ServerError, ArtistQuery } from "js/types"
 import IQDB from "js/iqdb-search"
 import browser, { search } from "webextension-polyfill";
 import { wikiPageToHtml, unescapeHtml } from "js/utility"
@@ -432,11 +432,25 @@ export default class DanbooruApi implements BooruApi {
         return response.ok
     }
 
-    private async searchArtistViaForm(
-        query: { url?: string, name?: string }
-    ): Promise<ArtistInfo[]> {
+    async setParent(postId: number, parentId: number): Promise<boolean> {
+        if (!this.credentials) throw new AuthError()
+        const { username, apiKey } = this.credentials
+        const authParams = new URLSearchParams({
+            "login": username,
+            "api_key": apiKey
+        })
+        const url = `${origin}/posts/${postId}.json?${authParams.toString()}`
+        const response = await fetch(url, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ post: { parent_id: parentId } })
+        })
+        return response.ok
+    }
+
+    private async searchForArtistViaForm(query: ArtistQuery): Promise<ArtistInfo[]> {
         const response = await browser.runtime.sendMessage({
-            type: Message.GetArtistTag,
+            type: MessageType.GetArtistTag,
             args: query 
         })
         const parser = new DOMParser()
@@ -453,9 +467,7 @@ export default class DanbooruApi implements BooruApi {
         })
     }
 
-    private async searchArtistViaApi(
-        query: { url?: string, name?: string }
-    ): Promise<ArtistInfo[]> {
+    private async searchForArtistViaApi(query: ArtistQuery): Promise<ArtistInfo[]> {
         let params
         if (query.url && !query.name) {
             params = new URLSearchParams({ "search[url_matches]": query.url })
@@ -475,15 +487,15 @@ export default class DanbooruApi implements BooruApi {
         }))
     }
 
-    async searchArtistByUrl(url: string): Promise<ArtistInfo[]> {
+    async searchForArtist(query: ArtistQuery): Promise<ArtistInfo[]> {
         const searchFunc = this.credentials ?
-            this.searchArtistViaApi : this.searchArtistViaForm
-        return searchFunc({ url })
+            this.searchForArtistViaApi : this.searchForArtistViaForm
+        return searchFunc(query)
     }
 
     async getArtistInfo(name: string): Promise<ArtistInfo | null> {
         const searchFunc = this.credentials ?
-            this.searchArtistViaApi : this.searchArtistViaForm
+            this.searchForArtistViaApi : this.searchForArtistViaForm
         const infos = await searchFunc({ name })
         if (infos.length === 0) return null
         return infos[0]

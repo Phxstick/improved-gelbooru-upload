@@ -4,10 +4,11 @@ import ArtistSearch from "js/components/artist-search"
 import WikiModal from "js/components/wiki-modal"
 import RadioButtons from "js/generic/radiobuttons"
 import Component from "js/generic/component"
-import { Settings, BooruApi, UploadData, EnhancedTags } from "js/types"
+import { Settings, BooruApi, UploadData, EnhancedTags, UploadInstanceData, PixivTags, HostName } from "js/types"
 import { E } from "js/utility"
 
 export default class UploadInterface extends Component {
+    private api: BooruApi
     private sourceInput: HTMLInputElement
     private fileUpload: FileUpload
     private titleInput: HTMLInputElement
@@ -21,6 +22,7 @@ export default class UploadInterface extends Component {
     constructor(api: BooruApi, wikiModal: WikiModal, settings: Settings) {
         super()
         UploadInterface.id++
+        this.api = api
 
         const { autoSelectFirstCompletion, tagGroups, hideTitleInput,
                 separateTagsWithSpace, splitTagInputIntoGroups,
@@ -104,6 +106,21 @@ export default class UploadInterface extends Component {
         }
     }
 
+    getEnhancedData(): UploadInstanceData {
+        const file = this.fileUpload.getFile()
+        const data = this.getData()
+        return {
+            ...this.getData(),
+            file: file ? {
+                objectUrl: this.fileUpload.getObjectUrl(),
+                name: file.name,
+                type: file.type
+            } : undefined,
+            fileUrl: this.getFileUrl(),
+            tags: this.getGroupedTags()
+        }
+    }
+
     reset() {
         this.fileUpload.reset()
         this.sourceInput.value = ""
@@ -127,12 +144,61 @@ export default class UploadInterface extends Component {
         }
     }
 
+    async insertEnhancedData(data: UploadInstanceData): Promise<CheckResult | undefined> {
+        if (data.title) {
+            this.titleInput.value = data.title
+        }
+        if (data.source) {
+            // Make sure to use direct Pixiv links as source for Danbooru (this
+            // is relevant when data is copied from Gelbooru upload page which
+            // uses non-direct links)
+            if (this.api.host === HostName.Danbooru && data.fileUrl &&
+                    data.fileUrl.includes("i.pximg.net")) {
+                this.sourceInput.value = data.fileUrl
+            } else {
+                this.sourceInput.value = data.source
+            }
+        }
+        if (data.rating) {
+            this.ratingSelection.setValue(data.rating)
+        }
+        if (data.tags) {
+            this.tagInputs.insertGroupedTags(data.tags, true)
+        }
+        let checkResult = this.fileUpload.getCheckResult()
+        if (data.file) {
+            const fileAlreadyLoaded = data.fileUrl && this.fileUpload.getFile()
+                && data.fileUrl === this.fileUpload.getUrl()
+            if (!fileAlreadyLoaded) {
+                const { objectUrl, name, type } = data.file
+                const blob = await fetch(objectUrl).then(r => r.blob())
+                const fileObj = new File([blob], name, { type })
+                checkResult = this.setFile(fileObj, data.fileUrl)
+            } else if (checkResult) {
+                const result = await checkResult
+                if (result.error) {
+                    checkResult = this.fileUpload.runChecks()
+                }
+            }
+        }
+        if (data.pixivTags) {
+            const pixivTags = data.pixivTags
+            // Timeout is needed so on-upload handler doesn't immediately clear tags again
+            setTimeout(() => this.displayPixivTags(pixivTags), 0)
+        }
+        return checkResult
+    }
+
     getLargeImagePreview(): HTMLElement {
         return this.fileUpload.getLargeImagePreview()
     }
 
     passDroppedFile(dropData: DataTransfer): Promise<CheckResult> {
         return this.fileUpload.handleDropData(dropData)
+    }
+
+    setFile(file: File, url?: string): Promise<CheckResult> {
+        return this.fileUpload.setFile(file, url)
     }
 
     addFileUploadListener(onFileUpload: FileUploadCallback) {
@@ -155,7 +221,7 @@ export default class UploadInterface extends Component {
         this.tagInputs.insertGroupedTags(tagData)
     }
 
-    displayPixivTags(pixivTags: { [key in string]: string }) {
+    displayPixivTags(pixivTags: PixivTags) {
         this.pixivTagsContainer.innerHTML = ""
         for (const tagName in pixivTags) {
             const translatedTag = pixivTags[tagName]

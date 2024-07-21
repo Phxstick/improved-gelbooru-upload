@@ -161,7 +161,7 @@ export default class ArtistSearch extends Component {
         // Send query to Danbooru's artist database
         let artistTags
         try {
-            artistTags = await this.api.searchArtistByUrl(url)
+            artistTags = await this.api.searchForArtist({ url })
         } catch (error) {
             this.setStatus("Failed to search for tags.", "failure")
             this.searchField.disabled = false

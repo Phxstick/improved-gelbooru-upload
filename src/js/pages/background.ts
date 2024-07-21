@@ -1,20 +1,75 @@
 import browser from "webextension-polyfill";
 import SettingsManager from "js/settings-manager";
-import { HostName, StatusUpdate, Message } from "js/types";
-import { getApi } from "js/api"
+import { HostName, StatusUpdate, MessageType, ArtistQuery, PixivTags, UploadInstanceData } from "js/types";
+import { getApi, isUploadUrl } from "js/api"
+import DanbooruApi from "js/danbooru-api";
 
-const PIXIV_EXTENSION = "hbghinibnihlfahabmgdanonolmihbko"
+// const PIXIV_EXTENSION = "hbghinibnihlfahabmgdanonolmihbko"
+const PIXIV_EXTENSION = "igmecdapimckdghdehckbojdcjjjjmfk"
 
 const associatedExtensions = [
     PIXIV_EXTENSION,
 ]
-const uploadTabKeys: { [key in HostName]: string } = {
-    [HostName.Gelbooru]: "gelbooruUploadTabs",
-    [HostName.Danbooru]: "danbooruUploadTabs"
+const uploadTabsKey = "uploadTabs"
+const uploadTabOpeningKey = "openingUploadTab"
+
+async function getAllUploadTabs(): Promise<{ [key in HostName]?: number[] }> {
+    const storageData = await browser.storage.session.get(uploadTabsKey)
+    return storageData[uploadTabsKey] || {}
 }
 
-async function queryArtistDatabase(
-        query: { url?: string, name?: string }): Promise<string> {
+async function getUploadTabs(host: HostName): Promise<number[]> {
+    const hostToTabs = await getAllUploadTabs()
+    const tabs = hostToTabs[host]
+    if (tabs === undefined) return []
+    return tabs
+}
+
+async function getLastUploadTab(host: HostName): Promise<number | undefined> {
+    const tabs = await getUploadTabs(host)
+    return tabs && tabs.length > 0 ? tabs[tabs.length - 1] : undefined
+}
+
+async function registerUploadTab(host: HostName, tabId: number) {
+    const hostToTabs = await getAllUploadTabs()
+    const tabs = hostToTabs[host] || []
+    if (tabs.includes(tabId)) return
+    hostToTabs[host] = [...tabs, tabId]
+    await browser.storage.session.set({ [uploadTabsKey]: hostToTabs })
+    setUploadTabOpening(host, false)
+    browser.tabs.update(tabId, { autoDiscardable: false })
+}
+
+async function unregisterUploadTab(tabId: number) {
+    const hostToTabs = await getAllUploadTabs()
+    for (const host of Object.values(HostName)) {
+        const tabs = hostToTabs[host]
+        if (!tabs) continue
+        const index = tabs.indexOf(tabId)
+        if (index < 0) continue
+        tabs.splice(index, 1)
+        return browser.storage.session.set({ [uploadTabsKey]: hostToTabs })
+    }
+}
+
+async function isUploadTabOpening(host: HostName): Promise<boolean> {
+    const storageData = await browser.storage.session.get(uploadTabOpeningKey)
+    const statusMap = storageData[uploadTabOpeningKey] || {}
+    return statusMap[host] || false
+}
+
+async function setUploadTabOpening(host: HostName, status: boolean) {
+    const storageData = await browser.storage.session.get(uploadTabOpeningKey)
+    const statusMap = storageData[uploadTabOpeningKey] || {}
+    statusMap[host] = status
+    await browser.storage.session.set({ [uploadTabOpeningKey]: statusMap })
+}
+
+async function wait(time: number) {
+    return new Promise(resolve => { setTimeout(resolve, time) })
+}
+
+async function queryArtistDatabase(query: ArtistQuery): Promise<string> {
     const url = new URL("https://danbooru.donmai.us/artists")
     if (query.url && !query.name) {
         url.searchParams.set("search[url_matches]", query.url)
@@ -71,11 +126,59 @@ function notifyAssociatedExtensions(statusUpdate: StatusUpdate) {
     }
 }
 
-browser.runtime.onStartup.addListener(() => {
-    for (const host of Object.values(HostName)) {
-        browser.storage.local.remove(uploadTabKeys[host])
+interface Message {
+    type: string
+    args: any
+}
+async function sendToUploadPage(host: HostName, message: Message) {
+    async function sendData(tabId: number) {
+        return browser.tabs.sendMessage(tabId, message).catch(() => {})
     }
-})
+
+    // Try sending message to registered tab. Note that the tab might no longer
+    // exist or not contain an upload page anymore (-> undefined is returned)
+    const tabId = await getLastUploadTab(host)
+    if (tabId) {
+        const result = await sendData(tabId)
+        if (result !== undefined) return result
+        unregisterUploadTab(tabId)
+    }
+
+    // Open a new upload page (unless such a page is already loading)
+    const uploadPageLoading = await isUploadTabOpening(host)
+    if (!uploadPageLoading) {
+        setUploadTabOpening(host, true)
+        const api = await getApi(host, undefined)
+        const url = api.getUploadUrl()
+        await browser.tabs.create({ url, active: false })
+    }
+
+    // Content script needs time to load, so repeatedly check if it has loaded
+    for (let numTries = 0; numTries < 20; numTries++) {
+        await wait(400)
+        const tabId = await getLastUploadTab(host)
+        if (tabId) {
+            const result = await sendData(tabId)
+            if (result !== undefined) return result
+            unregisterUploadTab(tabId)
+            break
+        }
+    }
+    return { error: "Failed to communicate with the upload page." }
+}
+
+async function focusTab(host: HostName, details: { filename: string }) {
+    const tabId = await getLastUploadTab(host)
+    if (!tabId) return {
+        error: `No upload page from host ${host} is currently open!`
+    }
+    const uploadTabExists = await browser.tabs.sendMessage(tabId,
+        { type: "focus-tab", args: details }).catch(() => {})
+    if (uploadTabExists) {
+        browser.tabs.update(tabId, { active: true })
+    }
+    return uploadTabExists
+}
 
 browser.runtime.onInstalled.addListener(async () => {
     // Register content script on Danbooru if it's enabled in the settings
@@ -90,28 +193,35 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
     if (!request.type) return
     const args = request.args || {}
 
-    if (request.type === Message.QueryIqdb) {
+    if (request.type === MessageType.QueryIqdb) {
         return queryIqdb(args.host, args.fileUrl, args.filename)
-
-    } else if (request.type === Message.GetArtistTag) {
+    }
+    else if (request.type === MessageType.GetArtistTag) {
         return { html: await queryArtistDatabase(args) }
-
-    } else if (request.type === Message.OpenExtensionOptions) {
+    }
+    else if (request.type === MessageType.OpenExtensionOptions) {
         browser.runtime.openOptionsPage()
-
-    } else if (request.type === Message.NotifyAssociatedExtensions) {
+    }
+    else if (request.type === MessageType.NotifyAssociatedExtensions) {
         notifyAssociatedExtensions(args)
-
-    } else if (request.type === Message.RegisterUploadPageTab) {
+    }
+    else if (request.type === MessageType.RegisterUploadPageTab) {
         if (!sender.tab || !sender.tab.id) return
-        const storageKey = uploadTabKeys[args.host as HostName]
-        await browser.storage.local.set({ [storageKey]: sender.tab.id })
-
-    } else if (request.type === Message.DownloadPixivImage) {
+        registerUploadTab(args.host as HostName, sender.tab.id)
+    }
+    else if (request.type === MessageType.DownloadPixivImage) {
         return browser.runtime.sendMessage(PIXIV_EXTENSION, {
             type: "download-pixiv-image",
             args
         })
+    }
+    else if (request.type === MessageType.PrepareUpload) {
+        const host = args.host as HostName
+        sendToUploadPage(host, { type: "prepare-upload", args: args.data })
+    }
+    else if (request.type === MessageType.FocusTab) {
+        if (!args.host || !args.details) return
+        return focusTab(args.host, args.details)
     }
 })
 
@@ -126,42 +236,34 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
     else if (request.type === "prepare-upload") {
         if (!request.data) return
         const host = request.data.host as HostName || HostName.Gelbooru
-        const storageKey = uploadTabKeys[host]
-        const storageData = await browser.storage.local.get([storageKey])
-        let tabId: number | undefined = storageData[storageKey]
-        const api = await getApi(host)
-
-        async function openUploadPage() {
-            const url = api.getUploadUrl()
-            const tab = await browser.tabs.create({ url, active: false })
-            return tab.id
+        const { file, url, pixivTags } = request.data as {
+            file: string, url: string, pixivTags: PixivTags
         }
-        async function sendData() {
-            return browser.tabs.sendMessage(tabId!, {
-                type: "prepare-upload",
-                args: request.data
-            }).catch(() => {})
+        if (!file || !url) return {
+            error: "Data must contain the properties 'file' and 'url'."
         }
-        if (!tabId) {
-            tabId = await openUploadPage()
-        } else {
-            const result = await sendData()
-            if (result !== undefined) return result
-            tabId = await openUploadPage()
+        const urlParts = url.split("/")
+        const fileName = urlParts[urlParts.length - 1]
+        const dotIndex = url.lastIndexOf(".")
+        const fileExtension = dotIndex >= 0 ? url.slice(dotIndex) : "jpg"
+        const fileType = {
+            "jpg": "image/jpeg",
+            "png": "image/png"
+        }[fileExtension] || "image/jpeg"
+        const data: UploadInstanceData = {
+            file: {
+                name: fileName,
+                type: fileType,
+                objectUrl: file
+            },
+            fileUrl: url,
+            pixivTags
         }
-        if (!tabId) return {
-            error: `Can't open tab with upload page for host "${host}".`
-        }
-    
-        // Content script needs time to load, so repeatedly try to establish a
-        // connection until it works
-        for (let numTries = 0; numTries < 20; numTries++) {
-            const result = await new Promise<any>(resolve => {
-                setTimeout(async () => resolve(await sendData()), 400)
-            })
-            if (result !== undefined) return result
-        }
-        return { error: "Failed to communicate with the upload page." }
+        const response = await sendToUploadPage(host, {
+            type: "prepare-upload",
+            args: [data]
+        })
+        return { ...response.checkResults[0], host }
     }
     // Focus specific tab on request
     else if (request.type === "focus-tab") {
@@ -169,18 +271,7 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
             error: `Tab to focus must be specified by parameter 'filename'.`
         }
         const host = request.args.host as HostName || HostName.Gelbooru
-        const storageKey = uploadTabKeys[host]
-        const storageData = await browser.storage.local.get([storageKey])
-        const tabId: number | undefined = storageData[storageKey]
-        if (!tabId) return {
-            error: `No upload page from host ${host} is currently open!`
-        }
-        const uploadTabExists = await browser.tabs.sendMessage(tabId,
-            { type: "focus-tab", args: request.args }).catch(() => {})
-        if (uploadTabExists) {
-            browser.tabs.update(tabId, { active: true })
-        }
-        return uploadTabExists
+        return focusTab(host, request.args)
     }
     
     // Handle queries to image hosts from associated extensions
@@ -202,9 +293,14 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
         return { posts: await api.searchPosts(tags) }
     }
     else if (request.type === "query-artist-database") {
-        if (!request.args || !request.args.url) return {
-            error: `Queries to artist database must include parameter 'url'.`
+        if (!request.args) return {
+            error: `Message must include object 'args' with arguments.`
         }
-        return { html: await queryArtistDatabase(request.args.url) }
+        const danbooruApi = await getApi(HostName.Danbooru) as DanbooruApi
+        try {
+            return { artists: await danbooruApi.searchForArtist(request.args) }
+        } catch (error) {
+            return { error }
+        }
     }
 })

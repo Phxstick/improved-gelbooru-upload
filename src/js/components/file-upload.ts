@@ -1,11 +1,11 @@
-import browser from "webextension-polyfill";
+import browser, { search } from "webextension-polyfill";
 import { Md5 } from "ts-md5";
-import { E, showInfoModal } from "js/utility";
-import { BooruApi, BooruPost, HostName, StatusUpdate, Message } from "js/types";
+import { E, imageToCanvas, loadImage, showInfoModal } from "js/utility";
+import { BooruApi, BooruPost, HostName, StatusUpdate, MessageType } from "js/types";
 import "./file-upload.scss";
 
 export type FileUploadCallback = (objectUrl: string) => void
-export type CheckResultCallback = (matchIds: number[] | undefined) => void
+export type CheckResultCallback = (checkResult: CheckResult) => void
 export type CheckStartCallback = (checkType: CheckType) => void
 
 export enum CheckType {
@@ -29,15 +29,19 @@ interface ImageInfo {
 export interface FileUpload {
     getElement: () => HTMLElement
     getFile: () => File | undefined
+    setFile: (file: File, url?: string) => Promise<CheckResult>
     getUrl: () => string
     setUrl: (url: string) => void
+    getObjectUrl: () => string
     getPixivId: () => string
+    getCheckResult: () => Promise<CheckResult> | undefined
     reset: () => void
+    runChecks: () => Promise<CheckResult>
     foundMd5Match: () => boolean
     getLargeImagePreview: () => HTMLElement
-    handleDropData: (dataTransfer: DataTransfer) => Promise<CheckResult>,
-    addFileUploadListener: (callback: FileUploadCallback) => void,
-    addCheckStartListener: (callback: CheckStartCallback) => void,
+    handleDropData: (dataTransfer: DataTransfer) => Promise<CheckResult>
+    addFileUploadListener: (callback: FileUploadCallback) => void
+    addCheckStartListener: (callback: CheckStartCallback) => void
     addCheckResultListener: (callback: CheckResultCallback) => void
 }
 
@@ -46,10 +50,17 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     let loadedUrl = ""
     let loadedPixivId = ""
     let objectUrl = ""
-    let onCheckedResolve: (value: CheckResult) => void = () => {}
     const uploadListeners: FileUploadCallback[] = []
     const checkStartListeners: CheckStartCallback[] = []
     const checkResultListeners: CheckResultCallback[] = []
+
+    let checkResult: Promise<CheckResult> | undefined
+    let onCheckedResolve: (value: CheckResult) => void = () => {}
+    const onCheckResult = (result: CheckResult): CheckResult => {
+        checkResultListeners.forEach(listener => listener(result))
+        onCheckedResolve(result)
+        return result
+    }
 
     // Create hidden file input with a label for custom styling
     const fileInput = E("input", {
@@ -59,6 +70,40 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         for: "file-input"
     })
     const hiddenInput = E("input", { class: "hidden-input", tabindex: "-1" })
+
+    // Define functions for setting file data
+    const handleDropData = (dataTransfer: DataTransfer): Promise<CheckResult> => {
+        const url = dataTransfer.getData("text/uri-list")
+        loadedUrl = url
+        if (url) {
+            const urlParts = new URL(url)
+            // Automatically fill in source URL if the given image is from pixiv
+            if (urlParts.hostname === "i.pximg.net") {
+                if (api.host === HostName.Danbooru) {
+                    sourceInput.value = url  // Danbooru wants the direct image URL
+                } else {
+                    const pathParts = urlParts.pathname.split("/")
+                    const filename = pathParts[pathParts.length - 1]
+                    const pixivId = filename.split("_")[0]
+                    sourceInput.value = `https://www.pixiv.net/artworks/${pixivId}`
+                }
+            }
+        }
+        // Set input file to dragged one and trigger listeners of change event
+        fileInput.files = dataTransfer.files
+        return new Promise((resolve) => {
+            fileInput.dispatchEvent(new Event("change"))
+            onCheckedResolve = resolve
+        })
+    }
+    const setFile = (file: File, url?: string): Promise<CheckResult> => {
+        const dataTransfer = new DataTransfer()
+        if (url) {
+            dataTransfer.setData("text/uri-list", url)
+        }
+        dataTransfer.items.add(file)
+        return handleDropData(dataTransfer)
+    }
 
     // Create field that can be focussed for pasting an image URL
     const pasteArea = E("div", { class: "paste-field", tabindex: "0" }, [
@@ -125,7 +170,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         if (parsedUrl.hostname === "i.pximg.net") {
             try {
                 const { dataUrl } = await browser.runtime.sendMessage({
-                    type: Message.DownloadPixivImage,
+                    type: MessageType.DownloadPixivImage,
                     args: { url }
                 })
                 if (!dataUrl) return
@@ -178,12 +223,9 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         }
         pasteArea.classList.remove("show-message")
 
-        // Update file input and run event handlers
+        // Assign image to file input
         const file = new File([blob], fileName, { type: `image/${fileType}`})
-        const dataTransfer = new DataTransfer()
-        dataTransfer.items.add(file)
-        fileInput.files = dataTransfer.files
-        fileInput.dispatchEvent(new Event("change"))
+        setFile(file, url)
     })
 
     // Create error messages
@@ -199,43 +241,20 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         `and enter them in the ${extensionSettingsLink} to enable these checks.`)
     noApiInfoSetMessage.querySelector(".extension-settings-link")!
         .addEventListener("click", () => browser.runtime.sendMessage({
-            type: Message.OpenExtensionOptions
+            type: MessageType.OpenExtensionOptions
         }))
 
     // Make it possible to drag&drop pictures (esp. from other webpages like Pixiv)
     fileInputWrapper.addEventListener("dragover", (event) => {
         event.preventDefault()
     })
-    const handleDropData = (dataTransfer: DataTransfer): Promise<CheckResult> => {
-        const url = dataTransfer.getData("text/uri-list")
-        loadedUrl = url
-        if (url) {
-            const urlParts = new URL(url)
-            // Automatically fill in source URL if the given image is from pixiv
-            if (urlParts.hostname === "i.pximg.net") {
-                if (api.host === HostName.Danbooru) {
-                    sourceInput.value = url  // Danbooru wants the direct image URL
-                } else {
-                    const pathParts = urlParts.pathname.split("/")
-                    const filename = pathParts[pathParts.length - 1]
-                    const pixivId = filename.split("_")[0]
-                    sourceInput.value = `https://www.pixiv.net/artworks/${pixivId}`
-                }
-            }
-        }
-        // Set input file to dragged one and trigger listeners of change event
-        fileInput.files = dataTransfer.files
-        return new Promise((resolve) => {
-            fileInput.dispatchEvent(new Event("change"))
-            onCheckedResolve = resolve
-        })
-    }
     fileInputWrapper.addEventListener("drop", (event) => {
         event.preventDefault()
         fileInputWrapper.classList.remove("dragover")
         if (!event.dataTransfer) return
         handleDropData(event.dataTransfer)
     })
+
     // Highlight label when dragging something above it
     fileInputLabel.addEventListener("dragenter", () => {
         if (downloading) return
@@ -299,12 +318,12 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         imageChecksContainer
     ])
 
-    const emitStatusUpdate = (postIds: number[], postsList?: BooruPost[]) => {
-        checkResultListeners.forEach(listener => listener(postIds))
+    // This gets called when an upload status check has finished without errors
+    const emitStatusUpdate = (postIds: number[], postsList?: BooruPost[]): CheckResult => {
         const posts: { [key in number]: BooruPost } = {}
         if (postsList) postsList.forEach(post => { posts[post.id] = post })
-        onCheckedResolve({ postIds, posts })
-        if (!loadedPixivId) return
+        const result = onCheckResult({ postIds, posts })
+        if (!loadedPixivId) return result
         const statusUpdate: StatusUpdate = {
             host: api.host,
             pixivId: loadedPixivId,
@@ -313,12 +332,13 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             posts
         }
         browser.runtime.sendMessage({
-            type: Message.NotifyAssociatedExtensions,
+            type: MessageType.NotifyAssociatedExtensions,
             args: statusUpdate
         })
+        return result
     }
 
-    const performMd5Search = async (file: File) => {
+    const performMd5Search = async (file: File): Promise<CheckResult | undefined> => {
         checkStartListeners.forEach(listener => listener(CheckType.md5hash))
         const arrayBuffer = await file.arrayBuffer()
         const md5 = new Md5()
@@ -338,13 +358,11 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
                 hashMatchesContainer.appendChild(link)
             }
             const postIds = posts.map(post => post.id)
-            emitStatusUpdate(postIds, posts)
-            return true
+            return emitStatusUpdate(postIds, posts)
         }
-        return false
     }
     
-    const performSourceSearch = async (pixivId: string): Promise<boolean> => {
+    const performSourceSearch = async (pixivId: string): Promise<CheckResult | undefined> => {
         checkStartListeners.forEach(listener => listener(CheckType.source))
         sourceMatchesContainer.classList.add("hidden")
         sourceMatchesHeader.classList.add("hidden")
@@ -367,7 +385,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         sourceMatchesHeader.classList.remove("hidden")
         if (posts.length === 0) {
             sourceMatchesHeader.innerHTML = `Found no posts matching Pixiv ID ${pixivId} ✔`
-            return false
+            return
         }
         const postInflection = posts.length === 1 ? "post" : "posts"
         const postsLink = posts.length === 1 ?
@@ -386,56 +404,43 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         }
         sourceMatchesContainer.classList.remove("hidden")
         const postIds = posts.map(post => post.id)
-        emitStatusUpdate(postIds, posts)
-        return true
+        return emitStatusUpdate(postIds, posts)
     }
 
-    async function shrinkImage(file: File, factor: number): Promise<File> {
+    async function shrinkImageFile(file: File, factor: number): Promise<File> {
+        const objUrl = URL.createObjectURL(file)
+        const image = await loadImage(objUrl)
+        const { width, height } = image
+        const newWidth = width * factor
+        const newHeight = height * factor
+        console.log(`Shrinking by factor ${factor.toFixed(1)}`)
+        console.log(`Dimensions: (${width}, ${height}) -> (${newWidth}, ${newHeight})`)
+        const canvas = imageToCanvas(image, { width: newWidth, height: newHeight })
+        URL.revokeObjectURL(objUrl)
         return new Promise((resolve, reject) => {
-            const img = new Image()
-            img.onload = () => {
-                const canvas = document.createElement("canvas")
-                canvas.width = img.width * factor
-                canvas.height = img.height * factor
-                console.log(`Original image dimensions: ${img.width} x ${img.height}`)
-                console.log(`----------------------------------`)
-                console.log(`New image dimensions: ${canvas.width} x ${canvas.height}`)
-                const ctx = canvas.getContext("2d")
-                if (!ctx) {
-                    reject()
-                    return
-                }
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-                canvas.toBlob(blob => {
-                    if (!blob) { reject(); return }
-                    resolve(new File([blob], file.name, { type: blob.type }))
-                }, file.type)
-            }
-            img.src = objectUrl
+            canvas.toBlob(blob => {
+                if (!blob) { reject(); return }
+                resolve(new File([blob], file.name, { type: blob.type }))
+            }, file.type)
         })
     }
 
-    async function shrinkImageFile(file: File, maxSize: number): Promise<File> {
+    async function compressImageFile(file: File, maxSize: number): Promise<File> {
         const originalSize = file.size
-        const origSizeMiB = (originalSize / (1024 ** 2)).toFixed(2)
-        console.log(`Original image: ${file.type}, ${origSizeMiB} MiB`)
         let factor = 1
         do {
             factor -= 0.1
-            file = await shrinkImage(file, factor)
+            file = await shrinkImageFile(file, factor)
             const shrunkSize = file.size
             const shrunkSizeMiB = (file.size / (1024 ** 2)).toFixed(2)
-            const shrinkPercentage = ((factor * factor) * 100).toFixed()
-            const factorString = factor.toFixed(1)
-            console.log(`Shrink percentage: ${shrinkPercentage}% (factor ${factorString})`)
-            console.log(`Resized image: ${file.type}, ${shrunkSizeMiB} MiB`)
+            console.log(`Resized image: ${shrunkSizeMiB} MiB`)
             const percentage = ((1 - (shrunkSize / originalSize)) * 100).toFixed()
             console.log(`Size reduction: ${percentage}%`)
         } while (file.size > maxSize)
         return file
     }
 
-    async function performIqdbSearch(file: File) {
+    async function performIqdbSearch(file: File): Promise<CheckResult> {
         checkStartListeners.forEach(listener => listener(CheckType.iqdb))
         startIqdbSearch.classList.add("hidden")
         // Hide source matches to make space for IQDB matches
@@ -449,11 +454,25 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
 
         // Shrink the image if it's too large for IQDB
         const maxSize = 8192 * 1024
+        const maxDim = 7500
+        const image = await loadImage(objectUrl)
+        const { width, height } = image
         let fileUrl = objectUrl
-        if (file.size > maxSize) {
-            file = await shrinkImageFile(file, maxSize)
+        if (file.size > maxSize || height > maxDim || width > maxDim) {
+            const logFilesize = (name: string, f: File) =>
+                console.log(`${name}: ${(f.size / (1024 ** 2)).toFixed(2)} MiB`)
+            logFilesize("Original", file)
+            if (height > maxDim || width > maxDim) {
+                const largerDim = height > width ? height : width
+                const ratio = maxDim / largerDim
+                file = await shrinkImageFile(file, ratio - (ratio % 0.1))
+                logFilesize("Shrunk", file)
+            }
+            if (file.size > maxSize) {
+                file = await compressImageFile(file, maxSize)
+                logFilesize("Compressed", file)
+            }
             fileUrl = URL.createObjectURL(file)
-            console.log("Shrunk image URL:", fileUrl)
         }
 
         const searchResult = await api.searchIqdb({
@@ -461,16 +480,14 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             fileUrl,
             filename: file.name
         })
-        //// if (fileUrl !== objectUrl) URL.revokeObjectURL(fileUrl)
+        if (fileUrl !== objectUrl) URL.revokeObjectURL(fileUrl)
         searchingIqdbMessage.classList.add("hidden")
         iqdbMatchesHeader.classList.remove("hidden")
 
         if (!searchResult.success) {
             iqdbMatchesHeader.classList.add("failure")
             iqdbMatchesHeader.textContent = searchResult.error
-            onCheckedResolve({ error: searchResult.error })
-            checkResultListeners.forEach(listener => listener(undefined))
-            return
+            return onCheckResult({ error: searchResult.error })
         }
         const matches = searchResult.matches
 
@@ -479,8 +496,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         iqdbMatchesHeader.classList.toggle("failure", matches.length > 0)
         if (matches.length === 0) {
             iqdbMatchesHeader.innerHTML = `Found no similar images in IQDB ✔`
-            emitStatusUpdate([])
-            return
+            return emitStatusUpdate([])
         }
         const post_s = matches.length === 1 ? "post" : "posts"
         const image_s = matches.length === 1 ? "image" : "images"
@@ -504,10 +520,16 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         try {
             posts = await Promise.all(postIds.map(id => api.getPostInfo(id)))
         } catch (error) {}
-        emitStatusUpdate(postIds, posts)
+        return emitStatusUpdate(postIds, posts)
     }
 
-    async function runChecks(file: File) {
+    async function runChecks(file?: File): Promise<CheckResult> {
+        if (!file) {
+            if (!fileInput.files || !fileInput.files.length) {
+                throw new Error("Empty file input, cannot run checks.")
+            }
+            file = fileInput.files[0]
+        }
         foundMd5Match = false
 
         noHashMatchesMessage.classList.add("hidden")
@@ -520,30 +542,28 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
 
         if (api.isAuthenticated()) {
             // Calculate MD5 and check if it already exists
-            let foundMatch
+            let result: CheckResult | undefined
             try {
-                foundMatch = await performMd5Search(file)
+                result = await performMd5Search(file)
             } catch {
                 const error = "MD5 hash check failed."
                 hashCheckErrorMessage.classList.remove("hidden")
                 hashCheckErrorMessage.innerHTML = error
-                onCheckedResolve({ error })
-                checkResultListeners.forEach(listener => listener(undefined))
-                return
+                return onCheckResult({ error })
             }
 
             // MD5 hash check is sufficiently precise, no need to do more checks if a match has been found
             // (false positives are theoretically possible but highly unlikely, so not worth handling)
-            if (foundMatch) return
+            if (result) return result
 
             // Do a source check using the pixiv ID if available
             if (loadedPixivId) {
-                const foundMatches = await performSourceSearch(loadedPixivId)
-                if (foundMatches) {
+                result = await performSourceSearch(loadedPixivId)
+                if (result) {
                     // If source search found matches, IQDB search may not be necessary,
                     // so just display a button to let user manually start search if needed
                     startIqdbSearch.classList.remove("hidden")
-                    return
+                    return result
                 }
             }
         } else {
@@ -551,7 +571,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         }
 
         // Search IQDB if other searches didn't yield results
-        performIqdbSearch(file)
+        return performIqdbSearch(file)
     }
 
     fileInput.addEventListener("change", async () => {
@@ -578,7 +598,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         loadedPixivId = pixivMatch !== null ? pixivMatch[1] : ""
 
         uploadListeners.forEach(listener => listener(objectUrl))
-        runChecks(file)
+        checkResult = runChecks(file)
     })
 
     const resetFunction = () => {
@@ -587,6 +607,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         loadedPixivId = ""
         if (objectUrl) URL.revokeObjectURL(objectUrl)
         objectUrl = ""
+        checkResult = undefined
         imageInfoContainer.classList.add("hidden")
         imagePreviewSmall.removeAttribute("src")
         imagePreviewLarge.removeAttribute("src")
@@ -605,12 +626,16 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     return {
         getElement: () => wrapper,
         getFile: () => fileInput.files ? fileInput.files[0] : undefined,
+        setFile,
         reset: resetFunction,
+        runChecks: () => { checkResult = runChecks(); return checkResult },
         foundMd5Match: () => foundMd5Match,
         getLargeImagePreview: () => imagePreviewLarge,
         getUrl: () => loadedUrl,
         setUrl: (url: string) => { loadedUrl = url },
         getPixivId: () => loadedPixivId,
+        getObjectUrl: () => objectUrl,
+        getCheckResult: () => checkResult,
         handleDropData,
         addFileUploadListener: (listener) => uploadListeners.push(listener),
         addCheckStartListener: (listener) => checkStartListeners.push(listener),

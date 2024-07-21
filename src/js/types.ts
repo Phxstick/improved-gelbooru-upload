@@ -84,6 +84,7 @@ export interface UploadData {
     rating: string
     pixivId?: string
 }
+
 export interface UploadSuccess {
     successful: true
     postId: number
@@ -94,6 +95,22 @@ export interface UploadFailure {
     error: string
 }
 export type UploadResult = UploadSuccess | UploadFailure
+
+export type PixivTags = { [key in string]: string }
+export interface UploadInstanceData {
+    file?: {
+        objectUrl: string
+        name: string
+        type: string
+    }
+    fileUrl?: string
+    title?: string
+    source?: string
+    tags?: EnhancedTags,
+    rating?: string
+    pixivId?: string
+    pixivTags?: PixivTags
+}
 
 export interface BooruApi {
     host: HostName
@@ -140,13 +157,20 @@ export interface StatusUpdate {
     posts?: { [key in number]: BooruPost }
 }
 
-export enum Message {
+export interface ArtistQuery {
+    url?: string
+    name?: string
+}
+
+export enum MessageType {
     QueryIqdb = "query-iqdb",
     GetArtistTag = "get-artist-tag",
     OpenExtensionOptions = "open-extension-options",
     NotifyAssociatedExtensions = "notify-associated-extensions",
     RegisterUploadPageTab = "register-upload-page-tab",
-    DownloadPixivImage = "download-pixiv-image"
+    DownloadPixivImage = "download-pixiv-image",
+    PrepareUpload = "prepare-upload",
+    FocusTab = "focus-tab"
 }
 
 export interface EnhancedTags {

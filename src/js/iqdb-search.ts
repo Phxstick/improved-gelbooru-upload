@@ -1,5 +1,5 @@
 import browser from "webextension-polyfill";
-import { HostName, IqdbMatch, IqdbSearchParams, IqdbSearchResult, Message } from "js/types";
+import { HostName, IqdbMatch, IqdbSearchParams, IqdbSearchResult, MessageType } from "js/types";
 
 namespace IQDB {
 
@@ -8,7 +8,7 @@ namespace IQDB {
         try {
             // Query IQDB via background page to circumvent CORS
             response = await browser.runtime.sendMessage({
-                type: Message.QueryIqdb,
+                type: MessageType.QueryIqdb,
                 args: params
             })
         } catch (e) {

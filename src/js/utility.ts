@@ -466,3 +466,28 @@ export async function catchError<T>(func: Func<T>): Promise<ResultAndError<T>> {
         }
     }
 }
+
+export async function loadImage(imageUrl: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = reject
+        img.src = imageUrl
+    })
+}
+
+export function imageToCanvas(
+    image: HTMLImageElement,
+    size: { width: number, height: number }
+): HTMLCanvasElement
+{
+    const canvas = document.createElement("canvas")
+    const { width, height } = size
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("Couldn't get 2D context.")
+    ctx.imageSmoothingQuality = "high"
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+    return canvas
+}

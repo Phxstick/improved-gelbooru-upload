@@ -242,8 +242,9 @@ export default class TagInputs {
             if (!event.clipboardData) return null
             event.preventDefault()
             event.stopImmediatePropagation()
-            const text = event.clipboardData.getData("text")
-            let tagNames = text.trim().split(" ")
+            const text = event.clipboardData.getData("text").trim()
+            if (text.length === 0) return
+            let tagNames = text.trim().split(/\s+/g).map(tag => tag.toLowerCase())
             tagNames = tagNames.filter(tag => !this.tags.has(tag))
             if (!options.separateTagsWithSpace)
                 tagNames = tagNames.map(tagName => tagName.replaceAll("_", " "))
@@ -365,7 +366,8 @@ export default class TagInputs {
         return { groupToTags, tagToType }
     }
 
-    insertGroupedTags({ groupToTags, tagToType }: EnhancedTags): void {
+    async insertGroupedTags({ groupToTags, tagToType }: EnhancedTags, updateTagInfos=false) {
+        const newTags: string[] = []
         for (const groupName in groupToTags) {
             const tagInput = this.groupToTagInput.get(groupName)
             if (!tagInput) continue
@@ -377,8 +379,27 @@ export default class TagInputs {
             for (const tagElement of tagElements) {
                 const tag = tagElement.dataset.value!
                 if (existingTags.has(tag)) continue
-                const tagType = tagToType[tag]
-                if (tagType) tagElement.dataset.type = tagType
+                newTags.push(tag)
+                if (!updateTagInfos) {
+                    const tagType = tagToType[tag]
+                    if (tagType) tagElement.dataset.type = tagType
+                }
+            }
+        }
+        if (updateTagInfos) {
+            const tagInfos = await this.api.getMultipleTagInfos(newTags)
+            for (const groupName in groupToTags) {
+                const tagInput = this.groupToTagInput.get(groupName)
+                if (!tagInput) continue
+                const tagElements = tagInput.getTagElements()
+                for (const tagElement of tagElements) {
+                    const tagName = tagElement.dataset.value!
+                    const tagKey = tagName.replaceAll(" ", "_")
+                    if (tagInfos.has(tagKey)) {
+                        const tagInfo = tagInfos.get(tagKey)
+                        this.applyTagInfo(tagInfo, tagElement)
+                    }
+                }
             }
         }
     }
