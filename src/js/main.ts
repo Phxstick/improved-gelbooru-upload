@@ -33,6 +33,7 @@ import SettingsManager from "js/settings-manager"
 import MainInterface from "js/components/main-interface"
 import { HostName, BooruApi, MessageType, UploadInstanceData } from "js/types"
 import { getApi } from "js/api"
+import ChangelogModal from "js/components/changelog-modal"
 
 // Import font here because it doesn't work with pure CSS in a content script
 const iconsFontUrl = browser.runtime.getURL("icons.woff2")
@@ -91,10 +92,15 @@ async function main() {
     const mainInterface = new MainInterface(api, settings)
     document.body.appendChild(mainInterface.getElement())
 
+    // Let service worker know that this upload page is ready
     browser.runtime.sendMessage({
         type: MessageType.RegisterUploadPageTab,
         args: { host: api.host } 
     })
+
+    // Show changelog if needed
+    const changelogModal = new ChangelogModal()
+    if (await changelogModal.isSupposedToOpen()) changelogModal.open()
 }
 
 main()

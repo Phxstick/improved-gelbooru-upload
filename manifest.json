@@ -27,6 +27,13 @@
                 "https://gelbooru.com/*",
                 "https://danbooru.donmai.us/*"
             ]
+        },
+        {
+            "resources": ["changelog.md"],
+            "matches": [
+                "https://gelbooru.com/*",
+                "https://danbooru.donmai.us/*"
+            ]
         }
     ],
 

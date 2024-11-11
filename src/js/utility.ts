@@ -1,3 +1,5 @@
+import DanbooruApi from "js/danbooru-api";
+import { BooruApi, HostName } from "js/types";
 
 export function fragmentFromString(htmlString: string): DocumentFragment {
     const template = document.createElement("template");
@@ -292,7 +294,7 @@ interface PageToHtmlParams {
 
 const tagRegex = /\[([^\]]+)\](.*?)\[\/\1\]/g
 
-function convertMarkupTags(markup: string): string {
+function convertMarkupTags(markup: string, api: BooruApi): string {
     return markup.replaceAll(tagRegex, (match, tagType, content) => {
         if (tagType === "i") {
             return `<i>${content}</i>`
@@ -300,7 +302,8 @@ function convertMarkupTags(markup: string): string {
             return `<b>${content}</b>`
         } else if (tagType === "post") {
             const postId = parseInt(content)  
-            return `<a class="post-link" data-post-id="${postId}">post ${postId}</a>`
+            const postUrl = api.getPostUrl(postId)
+            return `<a class="post-link" data-post-id="${postId}" href="${postUrl}" target="_blank">post ${postId}</a>`
         } else {
             return match
         }
@@ -377,15 +380,116 @@ function convertMarkupSegment(part: string, convertedParts: string[], separator:
     convertedParts.push("<p>" + lines.join("<br>") + "</p>")
 }
 
-export function wikiPageToHtml(page: string, params: PageToHtmlParams): string {
+async function handlePostReferences(page: string, params: PageToHtmlParams, api: DanbooruApi): Promise<string> {
+    const referenceRegex = /(?:[-*] )?!(post|asset) #(\d+)(?:: ([^\r\n]+))?(?:[\r\n]+)?/g
+    const matches = [...page.matchAll(referenceRegex)]
+    if (matches.length === 0) return page
+
+    // Seperate posts and assets and make one request for each of the two types
+    const postMatches = []
+    const assetMatches = []
+    for (const match of matches) {
+        const type = match[1]
+        if (type === "post") postMatches.push(match)
+        else if (type === "asset") assetMatches.push(match)
+    }
+    const postIds = postMatches.map(match => parseInt(match[2]))
+    const assetIds = assetMatches.map(match => parseInt(match[2]))
+    const posts = postIds.length === 0 ? [] :
+            await api.getPosts(postIds, { only: ["id", "thumbnailUrl"] })
+    const assets = assetIds.length === 0 ? [] :
+            await api.getMediaAssets(assetIds, { only: ["id", "variants"] })
+
+    // Map each post/asset to its corresponding resource URL and thumbnail URL
+    const postInfoMap: { [key in number]: { url: string, thumbnailUrl: string } } = {}
+    const assetInfoMap: { [key in number]: { url: string, thumbnailUrl: string } } = {}
+    for (const post of posts) {
+        postInfoMap[post.id] = {
+            url: api.getPostUrl(post.id),
+            thumbnailUrl: post.thumbnailUrl
+        }
+    }
+    for (const asset of assets) {
+        const numVariants = asset.variants.length
+        const index = numVariants > 1 ? numVariants - 2 : 0
+        assetInfoMap[asset.id] = {
+            url: api.getMediaAssetUrl(asset.id),
+            thumbnailUrl: asset.variants[index].url
+        }
+    }
+
+    // Replace matched parts with links including thumbnail + description
+    const replacements: Replacement[] = []
+    for (const match of matches) {
+        const [fullMatch, resourceType, resourceIdString, description] = match
+        const resourceId = parseInt(resourceIdString)
+        // For some reason, TS compiler complains without "!" but TS-server doesn't
+        const map = resourceType === "post" ? postInfoMap : assetInfoMap
+        const { url, thumbnailUrl } = map[resourceId]
+        const start = match.index!
+        const end = start + fullMatch.length
+        const linkElement = E("div", { class: "booru-post-with-description" }, [
+            E("a", { class: "booru-post", href: url, target: "_blank" }, [
+                E("img", { class: "small preview", src: thumbnailUrl })
+            ])
+        ])
+        if (description) {
+            linkElement.appendChild(
+                E("div", { class: "booru-post-description" }, description)
+            )
+        }
+        replacements.push({ start, end, newText: linkElement.outerHTML })
+    }
+
+    // Add line separators after the last match because newline characters are
+    // consumed by matches (not ideal since it assumes that all matches are part
+    // of the same list, which might not always be the case)
+    const separators = params.separator + params.separator
+    if (matches[matches.length - 1][0].endsWith(separators)) {
+        replacements[replacements.length - 1].newText += separators
+    }
+
+    return replaceSubstrings(page, replacements)
+}
+
+async function handleWikiReferences(page: string, api: BooruApi): Promise<string> {
+    const wikiReferenceRegex = /\[\[([^\]]*)\]\]/g
+    const matches = [...page.matchAll(wikiReferenceRegex)]
+    const pageNames = matches.map(match => match[1].split("|")[0])
+    console.log(`Page contains ${matches.length} wiki links`)
+    const tagInfos = matches.length > 30 ? undefined :
+        await api.getMultipleTagInfos(pageNames, ["name", "category"])
+    const replacements: Replacement[] = []
+    for (const match of matches) {
+        const [fullMatch, innerMatch] = match
+        const parts = innerMatch.split("|")
+        const displayName = parts.length > 1 ? parts[1] : parts[0]
+        const pageId = parts[0].toLowerCase().replaceAll(" ", "_")
+        const type = tagInfos && tagInfos.has(pageId) ? tagInfos.get(pageId)!.type : ""
+        const href = api.getWikiUrl(pageId)
+        const start = match.index!
+        const end = start + fullMatch.length
+        const newText = `<a class="wiki-link" data-page="${pageId}"${type ? ` data-type="${type}"` : ""} href="${href}">${displayName}</a>`
+        replacements.push({ start, end, newText })
+    }
+    return replaceSubstrings(page, replacements)
+}
+
+export async function wikiPageToHtml(page: string, params: PageToHtmlParams, api: BooruApi): Promise<string> {
     const { separator } = params
+    console.log(page)
 
     // Escape certain characters for safety
     page = escapeHtml(page)
 
-    // Handle external links of the form `"term":[url]`
-    page = page.replaceAll(/&quot;([^&]+)&quot;:\[([^\]]+)\]/g, (_, text, url) => {
-        return `<a href="${url}" target="_blank">${text}</a>`
+    // Handle external links of the form `"term":[url]` or `"term":url`
+    page = page.replaceAll(/&quot;(.+?)&quot;:(?:(http\S+)|\[([^\]]+)\])/g, (_, text, url1, url2) => {
+        return `<a href="${url1 || url2}" target="_blank">${text}</a>`
+    })
+
+    // Handle other external links with just a URL
+    page = page.replaceAll(/(?<!href=")(http:\/\/\S+)/g, (_, url) => {
+        return `<a href="${url}" target="_blank">${url}</a>`
     })
 
     // Handle local section links of the form `"name":#refId`
@@ -396,21 +500,29 @@ export function wikiPageToHtml(page: string, params: PageToHtmlParams): string {
 
     // Handle style tags like "[i]" or "[b]"
     // (do multiple passes to handle nested tags)
-    page = convertMarkupTags(convertMarkupTags(page))
+    page = convertMarkupTags(convertMarkupTags(page, api), api)
 
-    // Replace tag references of the form "[[tag_name|alt]]" with <a> elements
-    page = page.replaceAll(/\[\[([^\]]*)\]\]/g, (_, text) =>
-        `<a class="wiki-link">${text.split("|")[0]}</a>`)
+    // Replace wiki references of the form "[[page name|display name]]" with links
+    page = await handleWikiReferences(page, api)
 
-    // Handle post references of the form "post #id"
+    // Handle references of the form "-/* !post/asset #id: [desc]", which should be
+    // converted into a list of inline links with thumbnails and descriptions
+    if (api instanceof DanbooruApi) {
+        page = await handlePostReferences(page, params, api)
+    }
+
+    // Handle simple post references of the form "post #id"
     page = page.replaceAll(/post #(\d+)/g, (_, postIdString) => {
         const postId = parseInt(postIdString)  
-        return `<a class="post-link" data-post-id="${postId}">post #${postId}</a>`
+        const postUrl = api.getPostUrl(postId)
+        return `<a class="post-link" data-post-id="${postId}" href="${postUrl}" target="_blank">post #${postId}</a>`
     })
 
     // Handle post queries of the form "{{tag1 tag2 ...}}
-    page = page.replaceAll(/\{\{([^}]+)\}\}/g, (_, tags) => {
-        return `<a class="posts-search" data-tags="${tags}">${tags}</a>`
+    page = page.replaceAll(/\{\{([^}]+)\}\}/g, (_, query) => {
+        const tags = query.trim().split(" ")
+        const queryUrl = api.getQueryUrl(tags)
+        return `<a class="posts-search" data-tags="${tags}" href="${queryUrl}" target="_blank">${query}</a>`
     })
 
     // Break page into segments and handle each one separately
@@ -422,12 +534,25 @@ export function wikiPageToHtml(page: string, params: PageToHtmlParams): string {
     return convertedParts.join("")
 }
 
-export function showInfoModal(text: string) {
+interface InfoModalOptions {
+    dimmer?: boolean
+    closable?: boolean
+}
+
+export function showInfoModal(text: string, options: InfoModalOptions={}) {
+    const { dimmer=false, closable=true } = options
+    const actions = []
+    if (!closable) {
+        actions.push({ text: "Okay" })
+    }
     $("body").modal({
         class: 'mini',
         classContent: "centered",
         content: text,
-        duration: 160
+        duration: 160,
+        dimmer,
+        closable,
+        actions
     } as any).modal('show');
 }
 
@@ -490,4 +615,21 @@ export function imageToCanvas(
     ctx.imageSmoothingQuality = "high"
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
     return canvas
+}
+
+interface Replacement {
+    start: number
+    end: number
+    newText: string
+}
+export function replaceSubstrings(text: string, replacements: Replacement[]): string {
+    let offset = 0
+    const parts = []
+    for (const replacement of replacements) {
+        const { start, end, newText } = replacement
+        parts.push(text.slice(offset, start), newText)
+        offset = end
+    }
+    parts.push(text.slice(offset))
+    return parts.join("")
 }

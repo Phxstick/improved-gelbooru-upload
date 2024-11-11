@@ -175,9 +175,58 @@ async function focusTab(host: HostName, details: { filename: string }) {
     const uploadTabExists = await browser.tabs.sendMessage(tabId,
         { type: "focus-tab", args: details }).catch(() => {})
     if (uploadTabExists) {
+        const tab = await browser.tabs.get(tabId);
         browser.tabs.update(tabId, { active: true })
+        if (tab.windowId) {
+            browser.windows.update(tab.windowId, { focused: true })
+        }
     }
     return uploadTabExists
+}
+
+const knownOrigins = {
+    "twitter": [
+        "https://x.com/",
+        "https://pbs.twimg.com/"
+    ]
+}
+
+async function downloadPage(urlString: string) {
+    // Check if URL is valid and get origin
+    let origin
+    try {
+        const url = new URL(urlString)
+        origin = url.origin + "/"
+    } catch (e) {
+        return { error: "The given URL is not valid." }
+    }
+
+    // Check if origin is known and request host permissions for it
+    let isKnownOrigin = false
+    for (const [hostName, requiredOrigins] of Object.entries(knownOrigins)) {
+        if (!requiredOrigins.includes(origin)) continue
+        isKnownOrigin = true
+        const permissionsGranted = await browser.permissions.request({
+            "origins": requiredOrigins
+        })
+        if (!permissionsGranted) return {
+            error: "Required permissions have not been granted to the extension."
+        }
+        break
+    }
+    if (!isKnownOrigin) return {
+        error: "The given URL does not have a recognized origin."
+    }
+
+    // Download the page and return result
+    const response = await fetch(urlString)
+    if (!response.ok) {
+        return {
+            error: `HTTP request failed (status code ${response.status}).`
+        }
+    }
+    const html = response.text()
+    return { html }
 }
 
 browser.runtime.onInstalled.addListener(async () => {
@@ -214,6 +263,12 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
             type: "download-pixiv-image",
             args
         })
+    }
+    else if (request.type === MessageType.DownloadPage) {
+        if (!args.url) {
+            return { error: "Page URL has not been provided." }
+        }
+        return downloadPage(args.url)
     }
     else if (request.type === MessageType.PrepareUpload) {
         const host = args.host as HostName
@@ -302,5 +357,9 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
         } catch (error) {
             return { error }
         }
+    }
+    else if (request.type === "get-version") {
+        const manifest = browser.runtime.getManifest()
+        return { version: manifest.version }
     }
 })

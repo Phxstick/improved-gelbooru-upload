@@ -8,7 +8,7 @@ class SettingsManager {
     private static readonly defaults: Settings = {
         autoSelectFirstCompletion: true,
         showLargeImagePreview: true,
-        showTabs: false,
+        showTabs: true,
         hideTitleInput: true,
         splitTagInputIntoGroups: true,
         tagGroups: [
@@ -107,7 +107,7 @@ class SettingsManager {
             danbooruApiKey: {
                 type: "string",
                 text: "Danbooru API key",
-                details: "On Danbooru, the API key is not needed for most of the extension functionality,<br>" +
+                details: "On Danbooru, the API key is not needed for most of the extension's features,<br>" +
                     "but it's required for certain actions such as changing tag types or creating pools"
             },
             danbooruUsername: {

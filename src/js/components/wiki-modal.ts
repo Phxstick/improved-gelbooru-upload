@@ -1,6 +1,8 @@
 import { E, escapeHtml, showInfoModal, catchError } from "js/utility";
-import { BooruApi, BooruPost } from "js/types";
+import { BooruApi, BooruPost, TagInfo, TagType } from "js/types";
+import "./modal.scss"
 import "./wiki-modal.scss"
+import DanbooruApi from "js/danbooru-api";
 
 export class AbortedError extends Error {
     constructor() {
@@ -12,6 +14,7 @@ export class AbortedError extends Error {
 interface WikiPage {
     header: string
     content: string
+    pageType: TagType
     recentPosts: BooruPost[]
 }
 
@@ -81,12 +84,12 @@ export default class WikiModal {
             }
         })
 
-        // Add event listeners for various types of links in the page contents
+        // Add event listeners for wiki links in the page content
         this.root.addEventListener("click", (event) => {
             const target = event.target as HTMLElement
             if (target.classList.contains("wiki-link")) {
                 event.preventDefault()
-                this.openPage(target.textContent!)
+                this.openPage(target.dataset.page!)
             }
             else if (target.classList.contains("local-link")) {
                 const refId = target.dataset.linkto
@@ -103,18 +106,6 @@ export default class WikiModal {
                     }
                 }
             }
-            else if (target.classList.contains("post-link")) {
-                event.preventDefault()
-                const postId = parseInt(target.dataset.postId!)
-                const postUrl = this.api.getPostUrl(postId)
-                window.open(postUrl, "_blank")?.focus()
-            }
-            else if (target.classList.contains("posts-search")) {
-                event.preventDefault()
-                const tags = target.dataset.tags!.trim().split(" ")
-                const queryUrl = this.api.getQueryUrl(tags)
-                window.open(queryUrl, "_blank")?.focus()
-            }
         })
 
         // Initialize large loader for the fullscreen dimmer
@@ -124,7 +115,7 @@ export default class WikiModal {
         }
 
         // Create dimmer inside modal and initialize loader there
-        $(this.root).dimmer({ duration: 200 })
+        $(this.root).dimmer({ duration: 180 })
         $(this.root).dimmer("set opacity", 0.65)
         const modalDimmer = this.root.querySelector(".ui.dimmer")
         if (modalDimmer) {
@@ -238,7 +229,8 @@ export default class WikiModal {
                 this.abortLoading = () => reject(new AbortedError())
                 const results = await Promise.all([
                     this.api.getWikiPage(name),
-                    this.api.searchPosts([name], 14),
+                    this.api.searchPosts([name], { limit: 14 }),
+                    this.api.getSingleTagInfo(name),
                     // Prevent spinner from disappearing too quickly
                     new Promise(res => setTimeout(res, 200))
                 ])
@@ -259,7 +251,7 @@ export default class WikiModal {
                 return
             }
         }
-        const [wikiPage, recentPosts] = data as [string, BooruPost[]]
+        const [wikiPage, recentPosts, tagInfo] = data as [string, BooruPost[], TagInfo]
 
         // Show notification if the given tag doesn't exist
         if (!wikiPage && recentPosts.length === 0) {
@@ -270,18 +262,26 @@ export default class WikiModal {
         return {
             header: displayName,
             content: wikiPage,
+            pageType: tagInfo.type,
             recentPosts
         }
     }
 
     private displayPage(name: string, data: WikiPage, scrollPos=0) {
-        const { header, content, recentPosts } = data
+        const { header, pageType, content, recentPosts } = data
 
         // Set header and insert page content (if available)
-        this.headerText.textContent = header
         if (content) {
+            this.headerText.innerHTML = ""
+            this.headerText.classList.remove("no-wiki-page")
+            const wikiPageUrl = this.api.getWikiUrl(header.replaceAll(" ", "_"))
+            const headerLink = E("a", { href: wikiPageUrl, target: "_blank" }, header)
+            if (pageType) headerLink.dataset.type = pageType
+            this.headerText.appendChild(headerLink)
             this.content.innerHTML = content
         } else {
+            this.headerText.textContent = header
+            this.headerText.classList.add("no-wiki-page")
             this.content.innerHTML =
                 `<p style="color:dimgray">There's no wiki page with this name.</p>`
         }

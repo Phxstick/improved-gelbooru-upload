@@ -74,6 +74,7 @@ module.exports = {
                 { from: "icons", to: "icons" },
                 { from: "icons/gelbooru-icon-128.png", to: "128.png" },
                 { from: "*.woff2" },
+                { from: "changelog.md" },
                 { from: "node_modules/jquery/dist/jquery.js", to: "jquery.js" }
             ]
         }),

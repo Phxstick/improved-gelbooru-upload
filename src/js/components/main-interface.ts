@@ -328,8 +328,10 @@ export default class MainInterface extends Component {
                 const tabStatus = this.tabToStatus.get(tab as HTMLElement)
                 if (tabStatus === TabStatus.UploadSuccess ||
                         !instance.containsTags()) {
-                    delete dataObject[fileUrl]
-                    ++numDeleted
+                    if (fileUrl in dataObject) {
+                        delete dataObject[fileUrl]
+                        ++numDeleted
+                    }
                     continue
                 }
                 const data = instance.getData()
@@ -427,6 +429,14 @@ export default class MainInterface extends Component {
         this.interfaceWrapper.appendChild(instanceElement)
         uploadInstance.addFileUploadListener(async (objectUrl) => {
             uploadInstance.clearPixivTags()
+        
+            // Load large image preview
+            if (this.selectedTab === tab && this.settings.showLargeImagePreview) {
+                if (this.largeImagePreviewWrapper.firstChild)
+                    this.largeImagePreviewWrapper.firstChild.remove()
+                this.largeImagePreviewWrapper.appendChild(
+                        uploadInstance.getLargeImagePreview())
+            }
 
             // Draw a downsized thumbnail on a canvas element
             const divisor = MAX_THUMBNAIL_SIZE * window.devicePixelRatio
@@ -500,6 +510,10 @@ export default class MainInterface extends Component {
             this.mainWrapper.classList.remove("partial-scrolling")
             this.tabsWrapper.classList.add("hidden")
         }
+        const filename = this.tabToFilename.get(tab)
+        if (filename) this.filenameToTab.delete(filename)
+        const uploadInstance = this.tabToInstance.get(tab)
+        if (uploadInstance) uploadInstance.reset()
     }
 
     closeMultipleTabs(tabs: Set<HTMLElement>) {

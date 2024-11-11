@@ -1,7 +1,7 @@
-import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, MessageType, ServerError, ArtistQuery } from "js/types"
+import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, MessageType, ServerError, ArtistQuery, IndexOptions, PostAttribute } from "js/types"
 import IQDB from "js/iqdb-search"
-import browser, { search } from "webextension-polyfill";
-import { wikiPageToHtml, unescapeHtml } from "js/utility"
+import browser from "webextension-polyfill";
+import { wikiPageToHtml, unescapeHtml, catchError } from "js/utility"
 
 const origin = "https://danbooru.donmai.us"
 
@@ -46,10 +46,27 @@ interface RawPost {
     // rating: "g" | "s" | "q" | "e"
 }
 
-const postAttributes = [
-    "id", "md5", "source", "preview_file_url",
-    "score", "fav_count", "created_at"
-]
+const postAttributeToFieldName: { [key in PostAttribute]: string } = {
+    id: "id",
+    md5: "md5",
+    source: "source",
+    thumbnailUrl: "preview_file_url",
+    score: "score",
+    creationDate: "created_at",
+    favCount: "fav_count",
+}
+
+const postAttributes: PostAttribute[] = [...Object.keys(postAttributeToFieldName)] as PostAttribute[]
+
+type MediaAssetAttribute = keyof MediaAsset
+
+export interface PostIndexOptions extends IndexOptions {
+    only?: PostAttribute[]
+}
+
+export interface MediaAssetIndexOptions extends IndexOptions {
+    only?: MediaAssetAttribute[]
+}
 
 interface CreateUploadParams {
     source?: string
@@ -69,15 +86,27 @@ interface CreateUploadResponse {
     message: string
 }
 
+interface MediaAssetVariant {
+    type: string
+    url: string
+}
+
 interface MediaAsset {
+    id: number
+    created_at: string
+    variants: MediaAssetVariant[]
+}
+
+interface UploadMediaAsset {
     id: number
     upload_id: number
     media_asset_id: number
+    media_asset: MediaAsset
 }
 
 interface UploadInfo {
     error: string | null
-    upload_media_assets: MediaAsset[]
+    upload_media_assets: UploadMediaAsset[]
 }
 
 interface WikiPage {
@@ -121,6 +150,12 @@ const tagTypeToNumber: { [key in TagType]: number } = {
     "deprecated": 6
 }
 
+enum IndexType {
+    Posts = "posts",
+    Uploads = "uploads",
+    MediaAssets = "media_assets"
+}
+
 export default class DanbooruApi implements BooruApi {
     readonly host = HostName.Danbooru
     private readonly credentials: Credentials | undefined
@@ -144,15 +179,23 @@ export default class DanbooruApi implements BooruApi {
         return origin + "/posts/" + id.toString()
     }
 
+    getMediaAssetUrl(id: number): string {
+        return origin + "/media_assets/" + id.toString()
+    }
+
     getUploadUrl(): string {
         return origin + "/uploads/new"
+    }
+
+    getWikiUrl(name: string): string {
+        return origin + "/wiki_pages/" + name
     }
 
     getSettingsUrl(): string {
         return origin + "/profile"
     }
 
-    private processRawTagInfo(info: RawTagInfo): TagInfo {
+    private normalizeTagInfo(info: RawTagInfo): TagInfo {
         const { id, name, post_count, category, is_deprecated } = info
         return {
             id,
@@ -178,14 +221,15 @@ export default class DanbooruApi implements BooruApi {
     async getSingleTagInfo(tagName: string): Promise<TagInfo | undefined> {
         const rawTagInfo = await this.getSingleRawTagInfo(tagName)
         if (rawTagInfo === null) return
-        return this.processRawTagInfo(rawTagInfo)
+        return this.normalizeTagInfo(rawTagInfo)
     }
 
-    private async getMultipleRawTagInfos(tagNames: string[]): Promise<RawTagInfo[]> {
+    private async getMultipleRawTagInfos(tagNames: string[], only?: string[]): Promise<RawTagInfo[]> {
         const tagList = tagNames.map(tag => tag.replaceAll(" ", "_")).join(",")
         const params = new URLSearchParams({
             "search[name_normalize]": tagList,
-            "limit": "100"
+            "limit": "100",
+            ...(only ? { "only": only.join(",") } : {})
         })
         const url = origin + "/tags.json?" + params.toString()
         const response = await fetch(url, {
@@ -194,11 +238,11 @@ export default class DanbooruApi implements BooruApi {
         return await response.json() as RawTagInfo[]
     }
 
-    async getMultipleTagInfos(tagNames: string[]): Promise<Map<string, TagInfo>> {
-        const rawInfos = await this.getMultipleRawTagInfos(tagNames)
+    async getMultipleTagInfos(tagNames: string[], only?: string[]): Promise<Map<string, TagInfo>> {
+        const rawInfos = await this.getMultipleRawTagInfos(tagNames, only)
         const map = new Map<string, TagInfo>()
         for (const rawInfo of rawInfos) {
-            map.set(unescapeHtml(rawInfo.name), this.processRawTagInfo(rawInfo))
+            map.set(unescapeHtml(rawInfo.name), this.normalizeTagInfo(rawInfo))
         }
         return map
     }
@@ -261,14 +305,14 @@ export default class DanbooruApi implements BooruApi {
     }
 
     private normalizePost(rawPost: RawPost): BooruPost {
-        const { id, md5, source, preview_file_url,
-            score, fav_count, created_at } = rawPost
-        return {
-            id, md5, source, score,
-            thumbnailUrl: preview_file_url,
-            favCount: fav_count,
-            creationDate: created_at
+        // Note: type system could be improved to cover incomplete post objects
+        const normalizedPost: any = {}
+        for (const [postAttribute, fieldName] of Object.entries(postAttributeToFieldName)) {
+            if (fieldName in rawPost) {
+                normalizedPost[postAttribute] = rawPost[fieldName as keyof RawPost]
+            }
         }
+        return normalizedPost
     }
 
     async getPostInfo(postId: number): Promise<BooruPost> {
@@ -279,30 +323,50 @@ export default class DanbooruApi implements BooruApi {
         return this.normalizePost(rawPost)
     }
 
-    async searchPosts(tags: string[], limit?: number): Promise<BooruPost[]> {
+    async searchIndex(index: IndexType, args: { [key in string]: string }, options: IndexOptions={}): Promise<any[]> {
+        const { limit=1000, customOrder=false } = options
         const fullResults = []
         let pid = 0
-        if (!limit) limit = 1000
         const pageSize = Math.min(100, limit)
         while (pageSize * pid < limit) {
             const params = new URLSearchParams({
                 "format": "json",
-                "post[tags]": tags.join(" "),
                 "limit": pageSize.toString(),
                 "page": pid.toString(),
-                "only": postAttributes.join(",")
+                ...(customOrder ? { "search[order]": "custom" } : { }),
+                ...args,
             })
-            const url = origin + "/posts.json?" + params.toString()
+            const url = `${origin}/${index}.json?${params.toString()}`
             const response = await fetch(url, {
                 credentials: "same-origin"  // Send cookies instead of API key
             })
-            const results = await response.json() as RawPost[]
+            const results = await response.json() as any[]
             if (results.length === 0) break
             fullResults.push(...results)
             if (results.length < pageSize) break
             pid += 1
         }
-        return fullResults.map(rawPost => this.normalizePost(rawPost))
+        return fullResults
+    }
+
+    async searchPosts(tags: string[], options: PostIndexOptions={}): Promise<BooruPost[]> {
+        const { only=postAttributes } = options
+        const posts = await this.searchIndex(IndexType.Posts, {
+            "post[tags]": tags.join(" "),
+            "only": only.map(attr => postAttributeToFieldName[attr]).join(",")
+        }, options) as RawPost[]
+        return posts.map(rawPost => this.normalizePost(rawPost))
+    }
+
+    async getPosts(ids: number[], options: PostIndexOptions={}): Promise<BooruPost[]> {
+        const idListString = "id:" + ids.map(id => id.toString()).join(",")
+        return this.searchPosts([idListString], { customOrder: true, ...options })
+    }
+
+    async getMediaAssets(ids: number[], options: MediaAssetIndexOptions={}): Promise<MediaAsset[]> {
+        return this.searchIndex(IndexType.MediaAssets, {
+            "search[id]": ids.map(id => id.toString()).join(",")
+        }, { customOrder: true, ...options }) as Promise<MediaAsset[]>
     }
 
     async searchIqdb(params: IqdbSearchParams): Promise<IqdbSearchResult> {
@@ -329,18 +393,23 @@ export default class DanbooruApi implements BooruApi {
         if (pages.length === 0) return null
         return wikiPageToHtml(pages[0].body, {
             separator: "\r\n"
-        })
+        }, this)
     }
 
     async createPostUsingApi(data: UploadData): Promise<UploadResult> {
         // Upload the image first
         const uploadFormData = new FormData()
         uploadFormData.set("upload[files][0]", data.file)
-        const uploadResponse = await fetch(origin + "/uploads.json", {
-            method: "POST",
-            credentials: "same-origin",
-            body: uploadFormData
-        })
+        const [uploadResponse, uploadError] = await catchError(
+            () => fetch(origin + "/uploads.json", {
+                method: "POST",
+                credentials: "same-origin",
+                body: uploadFormData
+            })
+        )
+        if (uploadError) {
+            return { successful: false, error: "Failed to reach the server." }
+        }
         const uploadResponseObject = await uploadResponse.json() as CreateUploadResponse
         if (uploadResponseObject.error) {
             const error = `Image upload failed (${uploadResponseObject.message})`
@@ -366,7 +435,7 @@ export default class DanbooruApi implements BooruApi {
         if (data.tags.length) postData.tag_string = data.tags.join(" ")
         if (data.rating) postData.rating = data.rating
         const postUrl = origin + "/posts.json"
-        const postResponse = await fetch(postUrl, {
+        const [postResponse, postError] = await catchError(() => fetch(postUrl, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -378,13 +447,16 @@ export default class DanbooruApi implements BooruApi {
                 upload_media_asset_id: mediaAsset.id,
                 post: postData
             })
-        })
+        }))
+        if (postError) {
+            return { successful: false, error: "Failed to reach the server." }
+        }
         if (!postResponse.ok) {
             let details
             if (postResponse.status === 422) {
-                details = "upload limit reached"
+                details = "Upload limit reached."
             } else {
-                details = `status code ${postResponse.status}`
+                details = `Received status code ${postResponse.status}.`
             }
             const error = `Failed to create post (${details})`
             return { successful: false, error }

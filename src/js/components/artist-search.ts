@@ -174,11 +174,11 @@ export default class ArtistSearch extends Component {
             this.searching = false
             return false
         }
-        const tagNames = artistTags.map(artist => artist.name)
+        const tagNames = artistTags.map(artist => artist.name.replaceAll("_", " "))
 
         // Insert artist tags into the first tag input, update status message
-        artistTags.forEach(artist =>
-            this.tagInput.addSelected(artist.name, "artist", artist.isBanned))
+        artistTags.forEach(artist => this.tagInput.addSelected(
+            artist.name.replaceAll("_", " "), "artist", artist.isBanned))
         const tag_s = tagNames.length === 1 ? "tag" : "tags"
         this.setStatus(`Found following ${tag_s}: ` + tagNames.join(", "), "success")
         

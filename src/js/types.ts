@@ -48,6 +48,8 @@ export interface BooruPost {
     favCount?: number
 }
 
+export type PostAttribute = keyof BooruPost
+
 export enum HostName {
     Gelbooru = "gelbooru",
     Danbooru = "danbooru"
@@ -106,10 +108,15 @@ export interface UploadInstanceData {
     fileUrl?: string
     title?: string
     source?: string
-    tags?: EnhancedTags,
+    tags?: EnhancedTags
     rating?: string
     pixivId?: string
     pixivTags?: PixivTags
+}
+
+export interface IndexOptions {
+    limit?: number
+    customOrder?: boolean
 }
 
 export interface BooruApi {
@@ -117,14 +124,15 @@ export interface BooruApi {
     isAuthenticated(): boolean
     getPostUrl(id: number): string
     getQueryUrl(tags: string[]): string
+    getWikiUrl(name: string): string
     getUploadUrl(): string
     getSettingsUrl(): string
     getSingleTagInfo(tagName: string): Promise<TagInfo | undefined>
-    getMultipleTagInfos(tagNames: string[]): Promise<Map<string, TagInfo>>
+    getMultipleTagInfos(tagNames: string[], only?: string[]): Promise<Map<string, TagInfo>>
     getTagCompletions(query: string): Promise<TagInfo[] | undefined>
     setTagType(tagName: string, type: TagType): Promise<boolean>
     getPostInfo(postId: number): Promise<BooruPost>
-    searchPosts(tags: string[], limit?: number): Promise<BooruPost[]>
+    searchPosts(tags: string[], options?: IndexOptions): Promise<BooruPost[]>
     searchIqdb(params: IqdbSearchParams): Promise<IqdbSearchResult>
     getWikiPage(tagName: string): Promise<string | null>
     createPost(data: UploadData): Promise<UploadResult>
@@ -169,6 +177,7 @@ export enum MessageType {
     NotifyAssociatedExtensions = "notify-associated-extensions",
     RegisterUploadPageTab = "register-upload-page-tab",
     DownloadPixivImage = "download-pixiv-image",
+    DownloadPage = "download-page",
     PrepareUpload = "prepare-upload",
     FocusTab = "focus-tab"
 }

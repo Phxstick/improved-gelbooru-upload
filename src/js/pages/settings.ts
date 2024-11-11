@@ -12,6 +12,10 @@ import "fomantic-ui/dist/components/dropdown.min.js"
 import "fomantic-ui/dist/components/dropdown.min.css"
 import "fomantic-ui/dist/components/checkbox.min.js"
 import "fomantic-ui/dist/components/checkbox.min.css"
+import "fomantic-ui/dist/components/modal.min.js"
+import "fomantic-ui/dist/components/modal.min.css"
+import "fomantic-ui/dist/components/dimmer.min.js"
+import "fomantic-ui/dist/components/dimmer.min.css"
 
 import "fomantic-ui/dist/components/site.min.css"
 import "fomantic-ui/dist/components/button.min.css"
@@ -25,6 +29,7 @@ import "./settings.scss"
 
 import { createInput, createToggle, E } from "js/utility";
 import MultilineInput from "js/generic/multiline-input";
+import ChangelogModal from "js/components/changelog-modal";
 
 window.onload = async () => {
     const darkMode = window.matchMedia('(prefers-color-scheme: dark)')
@@ -33,6 +38,7 @@ window.onload = async () => {
         document.body.classList.toggle("dark-mode", event.matches)
     })
 
+    const settingsContainer = document.getElementById("settings-container")!
     const settingsDefinitions = SettingsManager.getDefinitions()
     const keyToRow: { [key in keyof Settings]?: HTMLElement } = {}
     const toggleSubsettingsFuncs: ((show?: boolean) => void)[] = []
@@ -101,9 +107,13 @@ window.onload = async () => {
             row.appendChild(E("div", { class: "setting-details" }, definition.details))
         }
         keyToRow[settingKey] = row
-        document.body.appendChild(row)
+        settingsContainer.appendChild(row)
     }
     for (const toggleSubsettingsFunc of toggleSubsettingsFuncs) {
         toggleSubsettingsFunc()
     }
+
+    const changelogButton = document.getElementById("changelog-button")!
+    const changelogModal = new ChangelogModal(true)
+    changelogButton.addEventListener("click", () => changelogModal.open())
 }

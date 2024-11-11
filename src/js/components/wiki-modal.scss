@@ -1,73 +1,4 @@
 .wiki-modal {
-  &.ui.modal > .header {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-
-    .header-buttons {
-      margin-left: auto;
-      display: flex;
-      flex-direction: row;
-      margin-right: -6px;
-
-      > button {
-        font-size: 1.6rem;
-        border: 0;
-        padding-top: 5px;
-        padding-bottom: 4px;
-        margin-top: -5px;
-        margin-bottom: -4px;
-        padding-left: 3px;
-        padding-right: 1px;
-        background-color: transparent;
-        color: #888;
-
-        &:hover {
-          color: #505050;
-        }
-        &:disabled {
-          color: #d0d0d0;
-        }
-        &:not(:disabled) {
-          cursor: pointer;
-        }
-        &:not(:first-child) {
-          margin-left: 6px;
-        }
-      }
-    }
-  }
-
-  .content {
-    p {
-      margin-bottom: 10px;
-    }
-
-    h3 {
-      margin-top: 14px;
-      margin-bottom: 10px;
-    }
-    h4 {
-      margin-top: 14px;
-      margin-bottom: 10px;
-    }
-    h5 {
-      margin-top: 12px;
-      margin-bottom: 8px;
-    }
-
-    ul {
-      margin-top: 10px;
-      margin-bottom: 10px;
-
-      ul {
-        margin-top: 3px;
-        margin-bottom: 3px;
-        padding-left: 22px;
-      }
-    }
-  }
-
   .recent-posts-wrapper {
     padding: 1px;  // To prevent cutting off outline of thumbnails
     white-space: nowrap;
@@ -90,7 +21,7 @@
     }
   }
 
-  .recent-posts-header {
+  .content .recent-posts-header {
     display: flex;
     flex-direction: row;
     margin-top: 14px;
@@ -101,6 +32,60 @@
     }
     a {
       margin-left: 10px;
+    }
+  }
+
+  .booru-post-with-description {
+    display: inline-block;
+    margin-right: 12px;
+    text-align: center;
+    vertical-align: top;
+
+    .booru-post {
+      margin-right: 0;
+    }
+
+    .booru-post-description {
+      font-size: 0.95rem;
+      text-align: center;
+      max-width: 175px;
+    }
+  }
+
+  .header-text {
+    &.no-wiki-page {
+      color: dimgray;
+    }
+    a[data-type="tag"] {
+      // color: rgb(0, 117, 248);
+      color: #404040;
+    }
+  }
+
+  a {
+    $artist-color: rgb(170, 0, 0);
+    $character-color: rgb(0, 150, 0);
+    $copyright-color: rgb(170, 0, 170);
+    $metadata-color: #e7640d;  // Slightly darker than original for better readability
+
+    // Color wiki links according to tag type
+    // &[data-type="tag"] {
+    //   color: #2d6da3;  // #337ab7;
+    // }
+    &[data-type="artist"] {
+      color: $artist-color;
+    }
+    &[data-type="character"] {
+      color: $character-color;
+    }
+    &[data-type="copyright"] {
+      color: $copyright-color;
+    }
+    &[data-type="metadata"] {
+      color: $metadata-color;
+    }
+    &[data-type="deprecated"] {
+      color: grey;
     }
   }
 }

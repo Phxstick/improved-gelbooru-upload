@@ -1,5 +1,8 @@
 body {
-  padding: 20px;
+  padding-top: 14px;
+  padding-left: 20px;
+  padding-right: 20px;
+  padding-bottom: 1px;
   height: unset;  // Override Semantic UI's unnecessary "height: 100%"
   background-color: var(--background-color);
   color: var(--color);
@@ -37,10 +40,7 @@ body {
 
 .settings-row {
   max-width: 700px;
-
-  &:not(:last-child) {
-    margin-bottom: 15px;
-  }
+  margin-bottom: 15px;
 }
 
 .reload-note {

@@ -1,4 +1,4 @@
-import browser, { search } from "webextension-polyfill";
+import browser from "webextension-polyfill";
 import { Md5 } from "ts-md5";
 import { E, imageToCanvas, loadImage, showInfoModal } from "js/utility";
 import { BooruApi, BooruPost, HostName, StatusUpdate, MessageType } from "js/types";
@@ -23,7 +23,148 @@ export interface CheckResult {
 interface ImageInfo {
     fileName: string
     fileType: string
-    url: string
+    fileUrl: string
+    sourceUrl?: string
+}
+
+type ImageInfoOrError = {
+    imageInfo?: ImageInfo,
+    error?: string
+}
+
+const pixivHelperExtensionUrl = "https://chromewebstore.google.com/detail/pixiv-to-gelbooru-upload/hbghinibnihlfahabmgdanonolmihbko"
+const pixivHelperExtensionLink = `<b><a href=${pixivHelperExtensionUrl} target="_blank">Pixiv to Gelbooru upload helper</a></b>`
+
+const pixivInfoModalText = `
+Pixiv images cannot be directly downloaded.
+You can either drag and drop an image here
+or install the extension ${pixivHelperExtensionLink}
+(which is the most convenient method as it allows you to
+simply click an artwork while pressing the Ctrl key).
+`.trim()
+
+const pixivSuggestionModalText = `
+Pixiv artwork can be uploaded more conveniently by using the browser extension
+${pixivHelperExtensionLink}.
+Simply click a Pixiv artwork while pressing the Ctrl key to download the full-size
+version and send it to the upload page (no need to manually drag it).
+`.trim()
+
+const PIXIV_HELPER_RECOMMENDATION_DATE_KEY = "pixiv-helper-recommendation-date"
+
+async function getImageInfo(event: ClipboardEvent): Promise<ImageInfoOrError> {
+    if (!event.clipboardData) return {
+        error: "The clipboard is empty."
+    }
+
+    // Extract URL from clipboard
+    let url = event.clipboardData.getData("text/plain")
+    if (!url) return {
+        error: "The clipboard doesn't contain a URL."
+    }
+    let fileUrl: URL
+    try {
+        fileUrl = new URL(url)
+    } catch (e) { return {
+        error: "The given URL is not valid."
+    } }
+
+    let fileType: string
+    let fileName: string
+    let sourceUrl = ""
+
+    // NOTE: the following code doesn't work because X posts are loaded dynamically
+
+    // // Apply special handling for X posts (extract image URL and source URL)
+    // if (fileUrl.hostname === "x.com") {
+    //     const postRegex = /^\/([^/]+)\/status\/([0-9]+)(?:\/photo\/(\d+))?/
+    //     const match = fileUrl.pathname.match(postRegex)
+    //     if (!match) return {
+    //         error: "The given URL is not a valid X post URL."
+    //     }
+    //     const [_, userName, postId, imageNumber] = match
+    //     sourceUrl = `https://x.com/${userName}/status/${postId}`
+
+    //     // Download the X post
+    //     const response = await browser.runtime.sendMessage({
+    //         type: MessageType.DownloadPage,
+    //         args: { url }
+    //     })
+    //     if (response.error) return {
+    //         error: response.error
+    //     }
+    //     const parser = new DOMParser()
+    //     const doc = parser.parseFromString(response.html, "text/html")
+
+    //     // Find the image element to in order to obtain the file URL
+    //     let imgElement: HTMLImageElement | undefined
+    //     const urlPrefix = "https://pbs.twimg.com/media"
+    //     if (imageNumber) {
+    //         const imgElements = doc.querySelectorAll(`ul img[src^='${urlPrefix}']`)
+    //         try {
+    //             const imageIndex = parseInt(imageNumber) - 1
+    //             imgElement = imgElements[imageIndex - 1] as HTMLImageElement | undefined
+    //         } catch (e) {}
+    //     } else {
+    //         const imgElements = doc.querySelectorAll(
+    //             `a[href^='/${userName}/status'] img[src^='${urlPrefix}']`)
+    //         if (imgElements.length === 1) {
+    //             imgElement = imgElements[0] as HTMLImageElement | undefined
+    //         }
+    //     }
+    //     if (!imgElement) return {
+    //         error: "Failed to extract the image from the given X post."
+    //     }
+    //     fileUrl = new URL(imgElement.getAttribute("src") || "")
+    // }
+
+    const pathParts = fileUrl.pathname.split("/")
+    fileName = pathParts[pathParts.length - 1]
+    const fileTypeRegex = /\.(png|jpg|jpeg|gif)$/
+    const fileTypeMatch = fileName.match(fileTypeRegex)
+    if (fileUrl.hostname === "pbs.twimg.com") {
+        const format = fileUrl.searchParams.get("format")
+        if (!format) return {
+            error: "Failed to extract image (unrecognized image URL format)."
+        }
+        fileType = format
+        fileName += "." + fileType
+        fileUrl.searchParams.set("name", "orig")
+    } else if (fileTypeMatch) {
+        fileType = fileTypeMatch[1]
+    } else {
+        return {
+            error: "The given URL is not a valid image source."
+        }
+    }
+    const imageInfo = { fileName, fileType, fileUrl: fileUrl.toString(), sourceUrl }
+    return { imageInfo }
+}
+
+async function downloadImage(url: string): Promise<Blob | undefined> {
+    const parsedUrl = new URL(url)
+    let finalUrl = url
+    // If the image is from Pixiv, let the Pixiv extension download it
+    if (parsedUrl.hostname === "i.pximg.net") {
+        try {
+            const { dataUrl } = await browser.runtime.sendMessage({
+                type: MessageType.DownloadPixivImage,
+                args: { url }
+            })
+            if (!dataUrl) return
+            finalUrl = dataUrl
+        } catch (e) {
+            showInfoModal(pixivInfoModalText, { dimmer: true, closable: true })
+            return
+        }
+    }
+    try {
+        const response = await fetch(finalUrl)
+        if (!response.ok) return
+        return await response.blob()
+    } catch (error) {
+        return
+    }
 }
 
 export interface FileUpload {
@@ -71,14 +212,17 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     })
     const hiddenInput = E("input", { class: "hidden-input", tabindex: "-1" })
 
-    // Define functions for setting file data
-    const handleDropData = (dataTransfer: DataTransfer): Promise<CheckResult> => {
+    // Define functions for setting file data (the parameter "dropped" should
+    // be set to true if the data actually originated from a real drop event)
+    const handleDropData = (dataTransfer: DataTransfer, dropped=true): Promise<CheckResult> => {
         const url = dataTransfer.getData("text/uri-list")
         loadedUrl = url
         if (url) {
             const urlParts = new URL(url)
-            // Automatically fill in source URL if the given image is from pixiv
+
+            // Special handling for Pixiv artwork
             if (urlParts.hostname === "i.pximg.net") {
+                // Automatically fill in source URL
                 if (api.host === HostName.Danbooru) {
                     sourceInput.value = url  // Danbooru wants the direct image URL
                 } else {
@@ -86,6 +230,17 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
                     const filename = pathParts[pathParts.length - 1]
                     const pixivId = filename.split("_")[0]
                     sourceInput.value = `https://www.pixiv.net/artworks/${pixivId}`
+                }
+
+                // Suggest using Pixiv helper extension (but only do so once)
+                if (dropped) {
+                    const key = PIXIV_HELPER_RECOMMENDATION_DATE_KEY
+                    browser.storage.sync.get(key).then(data => {
+                        const recommendationDate = (key in data) ? Date.parse(data[key]) : null
+                        if (recommendationDate !== null) return
+                        showInfoModal(pixivSuggestionModalText, { dimmer: true, closable: false })
+                        browser.storage.sync.set({ [key]: Date.now().toString() })
+                    })
                 }
             }
         }
@@ -102,17 +257,18 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             dataTransfer.setData("text/uri-list", url)
         }
         dataTransfer.items.add(file)
-        return handleDropData(dataTransfer)
+        return handleDropData(dataTransfer, false)
     }
 
     // Create field that can be focussed for pasting an image URL
+    const pasteErrorContainer =
+        E("div", { class: "paste-error status-message failure" })
     const pasteArea = E("div", { class: "paste-field", tabindex: "0" }, [
         hiddenInput,
         E("i", { class: "paste icon"}),
         E("div", { class: "paste-info status-message" },
             "Press Ctrl+V to paste image URL"),
-        E("div", { class: "paste-error status-message failure" },
-            "Clipboard contains no image URL"),
+        pasteErrorContainer,
         E("div", { class: "downloading status-message" },
             "Downloading image..."),
         E("div", { class: "download-error status-message failure" },
@@ -135,84 +291,34 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         pasteArea.classList.remove("show-message", "paste-error")
     })
 
-    function getImageInfo(event: ClipboardEvent): ImageInfo | undefined {
-        if (!event.clipboardData) return
-        let url = event.clipboardData.getData("text/plain")
-        if (!url) return
-        let parsedUrl: URL
-        try {
-            parsedUrl = new URL(url)
-        } catch (e) { return }
-        const pathParts = parsedUrl.pathname.split("/")
-        let fileName = pathParts[pathParts.length - 1]
-        const fileTypeRegex = /\.(png|jpg|jpeg)$/
-        const fileTypeMatch = fileName.match(fileTypeRegex)
-        let fileType: string
-        if (parsedUrl.hostname === "pbs.twimg.com") {
-            const format = parsedUrl.searchParams.get("format")
-            if (!format) return
-            fileType = format
-            fileName += "." + fileType
-            parsedUrl.searchParams.set("name", "orig")
-            url = parsedUrl.toString()
-        } else if (fileTypeMatch) {
-            fileType = fileTypeMatch[1]
-        } else {
-            return
-        }
-        return { fileName, fileType, url }
-    }
-
-    async function downloadImage(url: string): Promise<Blob | undefined> {
-        const parsedUrl = new URL(url)
-        let finalUrl = url
-        // If the image is from Pixiv, let the Pixiv extension download it
-        if (parsedUrl.hostname === "i.pximg.net") {
-            try {
-                const { dataUrl } = await browser.runtime.sendMessage({
-                    type: MessageType.DownloadPixivImage,
-                    args: { url }
-                })
-                if (!dataUrl) return
-                finalUrl = dataUrl
-            } catch (e) {
-                showInfoModal(
-                    "Cannot directly download from Pixiv.<br>" +
-                    "This requires the browser extension<br>" +
-                    "<b>Pixiv to Gelbooru upload helper</b>")
-                return
-            }
-        }
-        try {
-            const response = await fetch(finalUrl)
-            if (!response.ok) return
-            return await response.blob()
-        } catch (error) {
-            return
-        }
-    }
-
     // Press Ctrl + V to paste
     hiddenInput.addEventListener("paste", async (event) => {
         event.preventDefault()
         if (downloading) return
         pasteArea.classList.remove("download-error")
+        // TODO: display "loading" message!
 
         // Check if a valid image URL has been pasted
-        const imageInfo = getImageInfo(event)
+        const { imageInfo, error } = await getImageInfo(event)
         if (!imageInfo) {
+            pasteErrorContainer.textContent = error || ""
             pasteArea.classList.add("show-message", "paste-error")
             return
         }
-        const { fileName, fileType, url } = imageInfo
+        const { fileName, fileType, fileUrl, sourceUrl } = imageInfo
         hiddenInput.blur()
+
+        // Set source URL if it was possible to derive it from the pasted URL
+        if (sourceUrl) {
+            sourceInput.value = sourceUrl
+        }
 
         // Download the image
         downloading = true
         fileInput.disabled = true
         fileInputWrapper.classList.add("disabled")
         pasteArea.classList.add("show-message", "downloading")
-        const blob = await downloadImage(url)
+        const blob = await downloadImage(fileUrl)
         pasteArea.classList.remove("downloading")
         fileInputWrapper.classList.remove("disabled")
         fileInput.disabled = false
@@ -225,7 +331,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
 
         // Assign image to file input
         const file = new File([blob], fileName, { type: `image/${fileType}`})
-        setFile(file, url)
+        setFile(file, fileUrl)
     })
 
     // Create error messages
@@ -311,10 +417,17 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         startIqdbSearch,
         iqdbMatchesWrapper
     ])
-    const imagePreviewSmall = E("img", { class: "medium preview hidden" }) as HTMLImageElement
-    const imagePreviewLarge = E("img", { class: "large preview hidden" }) as HTMLImageElement
+    const imagePreviewSmall = E("img", { class: "medium preview" }) as HTMLImageElement
+    const imagePreviewLarge = E("img", { class: "large preview" }) as HTMLImageElement
+    const videoPreviewSmall = E("video", { class: "medium preview", controls: "" }, [
+        E("source")
+    ]) as HTMLVideoElement
+    const videoPreviewLarge = E("video", { class: "large preview", controls: "" }, [
+        E("source")
+    ]) as HTMLVideoElement
     const imageInfoContainer = E("div", { class: "image-info" }, [
         imagePreviewSmall,
+        // videoPreviewSmall,
         imageChecksContainer
     ])
 
@@ -523,6 +636,16 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         return emitStatusUpdate(postIds, posts)
     }
 
+    function hideChecks() {
+        noHashMatchesMessage.classList.add("hidden")
+        hashCheckErrorMessage.classList.add("hidden")
+        hashMatchesWrapper.classList.add("hidden")
+        sourceMatchesWrapper.classList.add("hidden")
+        iqdbMatchesWrapper.classList.add("hidden")
+        startIqdbSearch.classList.add("hidden")
+        imageInfoContainer.classList.remove("hidden")
+    }
+
     async function runChecks(file?: File): Promise<CheckResult> {
         if (!file) {
             if (!fileInput.files || !fileInput.files.length) {
@@ -531,15 +654,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             file = fileInput.files[0]
         }
         foundMd5Match = false
-
-        noHashMatchesMessage.classList.add("hidden")
-        hashCheckErrorMessage.classList.add("hidden")
-        hashMatchesWrapper.classList.add("hidden")
-        sourceMatchesWrapper.classList.add("hidden")
-        iqdbMatchesWrapper.classList.add("hidden")
-        startIqdbSearch.classList.add("hidden")
-        imageInfoContainer.classList.remove("hidden")
-
+        hideChecks()
         if (api.isAuthenticated()) {
             // Calculate MD5 and check if it already exists
             let result: CheckResult | undefined
@@ -574,6 +689,10 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         return performIqdbSearch(file)
     }
 
+    const isVideo = (file: File) => {
+        return file.name.endsWith(".webm") || file.name.endsWith(".mp4")
+    }
+
     fileInput.addEventListener("change", async () => {
         if (!fileInput.files || !fileInput.files.length) {
             noFileErrorMessage.classList.remove("hidden")
@@ -587,10 +706,17 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         fileInputLabel.textContent = file.name
         fileInputLabel.classList.remove("placeholder")
         noFileErrorMessage.classList.add("hidden")
-        imagePreviewSmall.src = objectUrl
-        imagePreviewLarge.src = objectUrl
-        imagePreviewSmall.classList.remove("hidden")
-        imagePreviewLarge.classList.remove("hidden")
+        if (isVideo(file)) {
+            (videoPreviewSmall.children[0] as HTMLSourceElement).src = objectUrl;
+            (videoPreviewLarge.children[0] as HTMLSourceElement).src = objectUrl;
+            imagePreviewSmall.removeAttribute("src")
+            imagePreviewLarge.removeAttribute("src")
+        } else {
+            imagePreviewSmall.src = objectUrl
+            imagePreviewLarge.src = objectUrl
+            videoPreviewSmall.children[0].removeAttribute("src")
+            videoPreviewLarge.children[0].removeAttribute("src")
+        }
 
         // If given filename uses the Pixiv pattern, extract and remember the ID
         const pixivRegex = /(\d+)_p\d+/
@@ -598,7 +724,12 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         loadedPixivId = pixivMatch !== null ? pixivMatch[1] : ""
 
         uploadListeners.forEach(listener => listener(objectUrl))
-        checkResult = runChecks(file)
+        if (!isVideo(file)) {
+            checkResult = runChecks(file)
+        } else {
+            checkResult = undefined
+            hideChecks()
+        }
     })
 
     const resetFunction = () => {
@@ -611,6 +742,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         imageInfoContainer.classList.add("hidden")
         imagePreviewSmall.removeAttribute("src")
         imagePreviewLarge.removeAttribute("src")
+        videoPreviewSmall.children[0].removeAttribute("src")
+        videoPreviewLarge.children[0].removeAttribute("src")
         fileInputLabel.classList.add("placeholder")
         fileInputLabel.textContent = "Drag image here or click to select file"
     }
@@ -631,6 +764,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         runChecks: () => { checkResult = runChecks(); return checkResult },
         foundMd5Match: () => foundMd5Match,
         getLargeImagePreview: () => imagePreviewLarge,
+        // getLargeImagePreview: () => fileInput.files && isVideo(fileInput.files[0]) ?
+        //     videoPreviewLarge : imagePreviewLarge,
         getUrl: () => loadedUrl,
         setUrl: (url: string) => { loadedUrl = url },
         getPixivId: () => loadedPixivId,

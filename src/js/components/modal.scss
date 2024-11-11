@@ -1,0 +1,82 @@
+.ui.dimmer {
+  background: rgba(0,0,0,.5);
+}
+
+.ui.modal {
+  & > .header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+
+    .header-buttons {
+      margin-left: auto;
+      display: flex;
+      flex-direction: row;
+      margin-right: -6px;
+
+      > button {
+        font-size: 1.6rem;
+        border: 0;
+        padding-top: 5px;
+        padding-bottom: 4px;
+        margin-top: -5px;
+        margin-bottom: -4px;
+        padding-left: 3px;
+        padding-right: 1px;
+        background-color: transparent;
+        color: #888;
+
+        &:hover {
+          color: #505050;
+        }
+        &:disabled {
+          color: #d0d0d0;
+        }
+        &:not(:disabled) {
+          cursor: pointer;
+        }
+        &:not(:first-child) {
+          margin-left: 6px;
+        }
+      }
+    }
+  }
+
+  & > .content {
+    width: unset;
+    font-size: 1.05rem;
+    max-height: 75vh;
+    overflow: auto;
+    padding-top: 16px;
+    padding-bottom: 16px;
+
+    p {
+      margin-bottom: 10px;
+    }
+
+    h3 {
+      margin-top: 14px;
+      margin-bottom: 10px;
+    }
+    h4 {
+      margin-top: 14px;
+      margin-bottom: 10px;
+    }
+    h5 {
+      margin-top: 12px;
+      margin-bottom: 8px;
+    }
+
+    ul {
+      margin-top: 10px;
+      margin-bottom: 10px;
+      padding-left: 30px;
+
+      ul {
+        margin-top: 3px;
+        margin-bottom: 3px;
+        padding-left: 22px;
+      }
+    }
+  }
+}

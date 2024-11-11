@@ -1,0 +1,21 @@
+.ui.modal.changelog-modal {
+  width: 820px;
+  // width: 850px;
+
+  > .content {
+    font-size: 1.05rem;
+    padding-right: 35px;
+
+    h2 {
+      margin-bottom: 10px;
+      font-size: 18px;
+
+      &:not(:first-child) {
+        margin-top: 20px;
+      }
+    }
+    li {
+      margin-bottom: 6px;
+    }
+  }
+}

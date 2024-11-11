@@ -1,5 +1,5 @@
-import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, ServerError } from "js/types"
-import { wikiPageToHtml, unescapeHtml } from "js/utility"
+import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, ServerError, IndexOptions } from "js/types"
+import { wikiPageToHtml, unescapeHtml, catchError } from "js/utility"
 import IQDB from "js/iqdb-search"
 
 const origin = "https://gelbooru.com/"
@@ -120,6 +120,15 @@ export default class GelbooruApi implements BooruApi {
         return baseUrl + params.toString()
     }
 
+    getWikiUrl(name: string): string {
+        const params = new URLSearchParams({
+            "page": "wiki",
+            "s": "list",
+            "search": name
+        })
+        return baseUrl + params.toString()
+    }
+
     getUploadUrl(): string {
         const params = new URLSearchParams({
             "page": "post",
@@ -236,13 +245,13 @@ export default class GelbooruApi implements BooruApi {
         return posts[0]
     }
 
-    async searchPosts(tags: string[], limit?: number): Promise<BooruPost[]> {
+    async searchPosts(tags: string[], params: IndexOptions={}): Promise<BooruPost[]> {
+        let { limit=Infinity } = params
         if (!this.credentials) throw new AuthError()
         const { userId, apiKey } = this.credentials
         const fullResults = []
         let pid = 0
         const pageSize = 100
-        if (!limit) limit = Infinity
         while (pageSize * pid < limit) {
             const params = new URLSearchParams({
                 "page": "dapi",
@@ -347,7 +356,7 @@ export default class GelbooruApi implements BooruApi {
         const page = doc.querySelector("textarea")!.textContent!
         return wikiPageToHtml(page, {
             separator: "\n"
-        })
+        }, this)
     }
 
     async createPost(data: UploadData): Promise<UploadResult> {
@@ -363,14 +372,18 @@ export default class GelbooruApi implements BooruApi {
             "page": "post",
             "s": "add",
         })
-        const response = await fetch(baseUrl + params.toString(), {
-            method: "POST",
-            body: formData
-        })
+        const [response, fetchError] = await catchError(
+            () => fetch(baseUrl + params.toString(), {
+                method: "POST",
+                body: formData
+            })
+        )
 
         // Handle server response (302 = successful upload, 200 = unsuccessful)
         let uploadError: string
-        if (response.redirected) {  // Can't read code 302 directly, check for redirection
+        if (fetchError) {
+            uploadError = "Failed to reach the server."
+        } else if (response.redirected) {  // Can't read code 302 directly, check for redirection
             const urlParts = new URL(response.url)
             if (urlParts.searchParams.has("id")) {
                 const postId = parseInt(urlParts.searchParams.get("id")!)
