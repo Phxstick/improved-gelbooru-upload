@@ -3,9 +3,11 @@
   "version": "1.2.0",
   "description": "Reconstruct the Gelbooru upload page with a bunch of useful features.",
   "author": "Phxstick",
+  "type": "module",
   "scripts": {
     "watch": "webpack --watch",
-    "build": "webpack"
+    "build": "webpack --mode=development",
+    "release": "webpack --mode=production"
   },
   "dependencies": {
     "fomantic-ui": "^2.9.2",

@@ -122,6 +122,7 @@ export interface IndexOptions {
 export interface BooruApi {
     host: HostName
     isAuthenticated(): boolean
+    getUrl(path: string): string
     getPostUrl(id: number): string
     getQueryUrl(tags: string[]): string
     getWikiUrl(name: string): string

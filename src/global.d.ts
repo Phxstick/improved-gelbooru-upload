@@ -13,3 +13,7 @@ declare namespace SemanticUI {
         }
     }
 }
+
+// Defined in webpack.config.js
+declare var PRODUCTION: boolean;
+declare var PIXIV_HELPER_EXTENSION_ID: string;

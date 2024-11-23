@@ -35,22 +35,28 @@
     }
   }
 
-  .booru-post-with-description {
+
+.media-gallery {
+  margin-bottom: -15px;
+
+  & > * {
     display: inline-block;
-    margin-right: 12px;
+    margin-right: 15px;
+    margin-bottom: 15px;
     text-align: center;
-    vertical-align: top;
+    vertical-align: middle;
 
     .booru-post {
       margin-right: 0;
     }
 
-    .booru-post-description {
+    .description {
       font-size: 0.95rem;
       text-align: center;
       max-width: 175px;
     }
   }
+}
 
   .header-text {
     &.no-wiki-page {

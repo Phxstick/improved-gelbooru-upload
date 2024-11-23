@@ -1,6 +1,7 @@
 import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, ServerError, IndexOptions } from "js/types"
-import { wikiPageToHtml, unescapeHtml, catchError } from "js/utility"
+import { unescapeHtml, catchError } from "js/utility"
 import IQDB from "js/iqdb-search"
+import { wikiPageToHtml } from "js/wiki-converter"
 
 const origin = "https://gelbooru.com/"
 const baseUrl = origin + "index.php?"
@@ -100,6 +101,10 @@ export default class GelbooruApi implements BooruApi {
 
     isAuthenticated(): boolean {
         return this.credentials !== undefined
+    }
+
+    getUrl(path: string): string {
+        return origin + path
     }
 
     getQueryUrl(tags: string[]): string {

@@ -1,11 +1,12 @@
 import browser from "webextension-polyfill";
 import SettingsManager from "js/settings-manager";
 import { HostName, StatusUpdate, MessageType, ArtistQuery, PixivTags, UploadInstanceData } from "js/types";
-import { getApi, isUploadUrl } from "js/api"
+import { getApi } from "js/api"
 import DanbooruApi from "js/danbooru-api";
 
-// const PIXIV_EXTENSION = "hbghinibnihlfahabmgdanonolmihbko"
-const PIXIV_EXTENSION = "igmecdapimckdghdehckbojdcjjjjmfk"
+const PIXIV_EXTENSION_STORE_ID = "hbghinibnihlfahabmgdanonolmihbko"
+const PIXIV_EXTENSION = PRODUCTION ? PIXIV_EXTENSION_STORE_ID :
+    (PIXIV_HELPER_EXTENSION_ID || PIXIV_EXTENSION_STORE_ID)
 
 const associatedExtensions = [
     PIXIV_EXTENSION,

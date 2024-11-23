@@ -1,3 +1,5 @@
+If you would like to report a bug or request a feature, you can reach me at <Phxstick@gmail.com>.
+
 Version 1.2.0
 --------------------------------------------------------------------------------
 - **Wiki integration**: when entering tags, press F2 to view the wiki page for the currently selected tag suggestion, and press Escape to close the wiki again. Alternatively, you can right-click a tag and select "Open wiki page".

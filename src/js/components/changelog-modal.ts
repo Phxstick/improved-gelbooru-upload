@@ -75,9 +75,9 @@ export default class ChangelogModal {
         const storageData = await browser.storage.sync.get(ChangelogModal.STORAGE_KEY)
         if (ChangelogModal.STORAGE_KEY in storageData) {
             this.settings = storageData[ChangelogModal.STORAGE_KEY] as ChangelogSettings
-            if (this.settings.hideUntilUpdate)
-                $(this.hideUntilUpdateCheckbox).checkbox("set checked")
         }
+        if (this.settings.hideUntilUpdate)
+            $(this.hideUntilUpdateCheckbox).checkbox("set checked")
     }
 
     private async saveSettings() {

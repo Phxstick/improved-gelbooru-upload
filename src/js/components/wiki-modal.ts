@@ -2,7 +2,6 @@ import { E, escapeHtml, showInfoModal, catchError } from "js/utility";
 import { BooruApi, BooruPost, TagInfo, TagType } from "js/types";
 import "./modal.scss"
 import "./wiki-modal.scss"
-import DanbooruApi from "js/danbooru-api";
 
 export class AbortedError extends Error {
     constructor() {
@@ -14,7 +13,7 @@ export class AbortedError extends Error {
 interface WikiPage {
     header: string
     content: string
-    pageType: TagType
+    type: TagType | null
     recentPosts: BooruPost[]
 }
 
@@ -211,7 +210,7 @@ export default class WikiModal {
     }
 
     private async loadPage(name: string): Promise<WikiPage | undefined> {
-        const displayName = escapeHtml(name.replaceAll("_", " "))
+        const escapedName = escapeHtml(name.replaceAll("_", " "))
         this.loading = true
 
         // Show fitting dimmer and loader
@@ -247,36 +246,37 @@ export default class WikiModal {
                 $(this.root).modal("hide dimmer")
                 return
             } else {
-                showInfoModal(`Failed to load the wiki page for "${displayName}".`)
+                showInfoModal(`Failed to load the wiki page for "${escapedName}".`)
                 return
             }
         }
-        const [wikiPage, recentPosts, tagInfo] = data as [string, BooruPost[], TagInfo]
+        const [wikiPage, recentPosts, tagInfo] = data as [string, BooruPost[], TagInfo?]
 
         // Show notification if the given tag doesn't exist
         if (!wikiPage && recentPosts.length === 0) {
-            showInfoModal(`The tag "${displayName}" doesn't exist.`)
+            showInfoModal(`The tag "${escapedName}" doesn't exist.`)
             return
         }
 
         return {
-            header: displayName,
+            header: name.replaceAll("_", " "),
             content: wikiPage,
-            pageType: tagInfo.type,
+            type: tagInfo ? tagInfo.type : null,
             recentPosts
         }
     }
 
     private displayPage(name: string, data: WikiPage, scrollPos=0) {
-        const { header, pageType, content, recentPosts } = data
+        const { header, type, content, recentPosts } = data
 
         // Set header and insert page content (if available)
         if (content) {
             this.headerText.innerHTML = ""
             this.headerText.classList.remove("no-wiki-page")
-            const wikiPageUrl = this.api.getWikiUrl(header.replaceAll(" ", "_"))
-            const headerLink = E("a", { href: wikiPageUrl, target: "_blank" }, header)
-            if (pageType) headerLink.dataset.type = pageType
+            const wikiPageUrl = this.api.getWikiUrl(name)
+            const headerLink = E("a", { href: wikiPageUrl, target: "_blank" })
+            headerLink.textContent = header
+            if (type) headerLink.dataset.type = type
             this.headerText.appendChild(headerLink)
             this.content.innerHTML = content
         } else {

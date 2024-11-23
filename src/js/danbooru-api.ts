@@ -1,7 +1,8 @@
 import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, MessageType, ServerError, ArtistQuery, IndexOptions, PostAttribute } from "js/types"
 import IQDB from "js/iqdb-search"
 import browser from "webextension-polyfill";
-import { wikiPageToHtml, unescapeHtml, catchError } from "js/utility"
+import { unescapeHtml, catchError } from "js/utility"
+import { wikiPageToHtml } from "js/wiki-converter";
 
 const origin = "https://danbooru.donmai.us"
 
@@ -188,7 +189,15 @@ export default class DanbooruApi implements BooruApi {
     }
 
     getWikiUrl(name: string): string {
-        return origin + "/wiki_pages/" + name
+        return origin + "/wiki_pages/" + encodeURIComponent(name)
+    }
+
+    getPoolUrl(id: number): string {
+        return origin + "/pools/" + id
+    }
+
+    getUrl(path: string): string {
+        return origin + path
     }
 
     getSettingsUrl(): string {

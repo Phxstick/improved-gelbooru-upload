@@ -98,7 +98,7 @@ body.host-danbooru {
   }
   img {
     // outline: 1px solid mediumpurple;
-    outline: 1px solid #ccc;
+    // outline: 1px solid #ccc;
     border-radius: 3px;
   }
 }
@@ -133,6 +133,10 @@ body.host-danbooru {
 
 input:focus {
   outline: none !important;
+}
+
+*:focus-visible {
+  outline: none;
 }
 
 .pixiv-tags {
