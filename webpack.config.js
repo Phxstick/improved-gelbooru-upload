@@ -2,7 +2,6 @@ import path from "path";
 import CleanWebpackPluginPkg from "clean-webpack-plugin";
 import CopyWebpackPlugin from "copy-webpack-plugin";
 import ForkTsCheckerWebpackPlugin from "fork-ts-checker-webpack-plugin";
-import RemovePlugin from "remove-files-webpack-plugin";
 import webpack from "webpack";
 import manifest from "./manifest.json" assert { type: "json" };
 import { fileURLToPath } from "url";
@@ -25,7 +24,7 @@ export default ((_, argv) => {
         output: {
             publicPath: "",
             filename: "[name].js",
-            path: path.resolve(__dirname, production ? releaseName : "dist")
+            path: path.resolve(__dirname, production ? "release/" + releaseName : "dist")
         },
         resolve: {
             extensions: [".js", ".ts", ".scss", ".html"],
@@ -55,12 +54,6 @@ export default ((_, argv) => {
                     ]
                 },
                 {
-                    test: /\.(woff|woff2|eot|ttf|otf)$/,
-                    use: [
-                        "file-loader"
-                    ]
-                },
-                {
                     test: /\.ts$/,
                     loader: "ts-loader",
                     options: {
@@ -70,6 +63,12 @@ export default ((_, argv) => {
                 {
                     test: /\.html$/,
                     loader: "html-loader"
+                },
+                // Loading Semantic UI's fonts in a content script doesn't work,
+                // delete all except for the custom font that gets loaded via JS
+                {
+                    test: /\.(woff|woff2|ttf|svg|eot)$/,
+                    loader: "ignore-loader"
                 }
             ]
         },
@@ -87,27 +86,13 @@ export default ((_, argv) => {
                 ]
             }),
             new ForkTsCheckerWebpackPlugin(),
-            new RemovePlugin({
-                "after": {
-                    root: "./dist",
-                    // Loading Semantic UI's fonts in a content script doesn't work,
-                    // delete all except for the custom font that gets loaded via JS
-                    test: [
-                        {
-                            folder: ".",
-                            method: (path) => {
-                                const ext = path.split(".").slice(-1)[0]
-                                const extensions = ["eot", "ttf", "svg", "woff", "woff2"]
-                                return !path.endsWith("icons.woff2") && extensions.includes(ext)
-                            }
-                        }
-                    ]
-                }
-            }),
             new DefinePlugin({
                 PRODUCTION: JSON.stringify(production),
                 PIXIV_HELPER_EXTENSION_ID: JSON.stringify(production ? "" : process.env.PIXIV_HELPER_EXTENSION_ID)
             })
-        ]
+        ],
+        optimization: {
+            minimize: production
+        }
     }}
 )

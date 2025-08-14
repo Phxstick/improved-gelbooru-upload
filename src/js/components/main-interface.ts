@@ -64,7 +64,7 @@ export default class MainInterface extends Component {
 
         const tabsContainer = E("div", { class: "tabs-container" })
         tabsContainer.addEventListener("click", (event) => {
-            if (event.ctrlKey || event.shiftKey) return
+            if (event.ctrlKey || event.metaKey || event.shiftKey) return
             const target = event.target as HTMLElement
             const tab = target.closest(".tab") as HTMLElement | null
             if (tab === null) return
@@ -304,7 +304,7 @@ export default class MainInterface extends Component {
 
         // If Ctrl + c is pressed, try to copy selected tags in the active tab
         window.addEventListener("keydown", (event) => {
-            if ((event.key === "c" || event.key === "x") && event.ctrlKey) {
+            if ((event.key === "c" || event.key === "x") && (event.ctrlKey || event.metaKey)) {
                 const instance = this.tabToInstance.get(this.selectedTab)!
                 const tagsCopied = instance.copyTags(event.key === "x")
                 if (tagsCopied) event.preventDefault()
@@ -314,7 +314,7 @@ export default class MainInterface extends Component {
         // If Ctrl + s is pressed, save the state of all tabs where tags
         // were entered and a file was added but it hasn't been uploaded yet
         window.addEventListener("keydown", async (event) => {
-            if (event.key !== "s" || !event.ctrlKey) return
+            if (event.key !== "s" || (!event.ctrlKey && !event.metaKey)) return
             event.preventDefault()
             let numAdded = 0
             let numDeleted = 0
@@ -361,7 +361,7 @@ export default class MainInterface extends Component {
         })
         // If Ctrl + p is pressed, load all saved data into new tabs
         window.addEventListener("keydown", async (event) => {
-            if (event.key !== "p" || !event.ctrlKey) return
+            if (event.key !== "p" || (!event.ctrlKey && !event.metaKey)) return
             event.preventDefault()
             const storageKey = this.tabDataStorageKey
             const storageData = await browser.storage.local.get(storageKey)

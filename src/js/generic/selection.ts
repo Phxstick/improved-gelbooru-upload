@@ -58,7 +58,7 @@ export default class Selection {
             }
 
             // If no modifier key is pressed, narrow selection to clicked element
-            const modifierUsed = event.ctrlKey || event.shiftKey;
+            const modifierUsed = event.ctrlKey || event.metaKey || event.shiftKey;
             if(!modifierUsed) {
                 const singleElementSelected = this.selectedElements.size === 1
                 this.clear();
@@ -77,7 +77,7 @@ export default class Selection {
             // If ctrl is pressed (but not shift), add/remove from selection
             const next = target.nextElementSibling as HTMLElement;
             const prev = target.previousElementSibling as HTMLElement;
-            if (event.ctrlKey && !event.shiftKey) {
+            if ((event.ctrlKey || event.metaKey) && !event.shiftKey) {
                 if (!this.selectedElements.has(target)) {
                     this.selectedElements.add(target);
                     target.classList.add("selected");

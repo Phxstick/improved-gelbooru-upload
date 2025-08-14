@@ -232,12 +232,12 @@ export default class GelbooruApi implements BooruApi {
     }
 
     private normalizePost(rawPost: RawPost): BooruPost {
-        const { id, md5, source, directory, score, created_at } = rawPost
+        const { id, md5, preview_url, source, score, created_at } = rawPost
         return {
             id: typeof id === "number" ? id : parseInt(id),
             md5,
             source,
-            thumbnailUrl: `https://img3.gelbooru.com/thumbnails/${directory}/thumbnail_${md5}.jpg`,
+            thumbnailUrl: preview_url,
             score: typeof score === "number" ? score : parseInt(score),
             creationDate: created_at
         }
