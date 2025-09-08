@@ -78,13 +78,18 @@ interface IqdbSearchFailure {
 }
 export type IqdbSearchResult = IqdbSearchSuccess | IqdbSearchFailure
 
-export interface UploadData {
-    file: File
-    title: string
+export interface BasicUploadData {
     source: string
-    tags: string[]
     rating: string
+    title: string
+    description?: string
     pixivId?: string
+    fileUrl?: string
+}
+
+export interface UploadData extends BasicUploadData {
+    file: File
+    tags: string[]
 }
 
 export interface UploadSuccess {
@@ -99,18 +104,13 @@ export interface UploadFailure {
 export type UploadResult = UploadSuccess | UploadFailure
 
 export type PixivTags = { [key in string]: string }
-export interface UploadInstanceData {
+export interface UploadInstanceData extends Partial<BasicUploadData> {
     file?: {
         objectUrl: string
         name: string
         type: string
     }
-    fileUrl?: string
-    title?: string
-    source?: string
     tags?: EnhancedTags
-    rating?: string
-    pixivId?: string
     pixivTags?: PixivTags
 }
 
@@ -131,14 +131,21 @@ export interface BooruApi {
     getSingleTagInfo(tagName: string): Promise<TagInfo | undefined>
     getMultipleTagInfos(tagNames: string[], only?: string[]): Promise<Map<string, TagInfo>>
     getTagCompletions(query: string): Promise<TagInfo[] | undefined>
-    setTagType(tagName: string, type: TagType): Promise<boolean>
+    setTagType(tagName: string, type: TagType): Promise<void>
     getPostInfo(postId: number): Promise<BooruPost>
     searchPosts(tags: string[], options?: IndexOptions): Promise<BooruPost[]>
     searchIqdb(params: IqdbSearchParams): Promise<IqdbSearchResult>
     getWikiPage(tagName: string): Promise<string | null>
     createPost(data: UploadData): Promise<UploadResult>
     createPool(name: string): Promise<string>
-    addToPool(postIds: number[], poolId: string): Promise<boolean>
+    addToPool(postIds: number[], poolId: string): Promise<void>
+}
+
+export class RequestError extends Error {
+    constructor(url: string) {
+        super(`Failed to send request to URL '${url}'`)
+        this.name = "RequesteError"
+    }
 }
 
 export class AuthError extends Error {

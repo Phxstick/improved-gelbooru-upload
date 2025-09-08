@@ -2,7 +2,7 @@ import ContextMenu from "js/generic/context-menu";
 import TagSearch from "js/generic/tag-search";
 import WikiModal from "js/components/wiki-modal"
 import { BooruApi, TagType, TagInfo, HostName, EnhancedTags } from "js/types";
-import { E } from "js/utility";
+import { E, showInfoModal } from "js/utility";
 import "./tag-inputs.scss"
 import DanbooruApi from "js/danbooru-api";
 
@@ -24,12 +24,12 @@ function openTagTypePopup(tagElement: HTMLElement, api: BooruApi) {
         if (target.parentElement !== tagTypeMenu) return
         const tagName = tagElement.dataset.value!.replaceAll(" ", "_")
         const newType = target.dataset.value as TagType
-        const success = await api.setTagType(tagName, newType)
-        if (success) {
+        try {
+            await api.setTagType(tagName, newType)
             tagElement.dataset.type = newType
             if (newType !== "tag") tagElement.classList.remove("rare")
-        } else {
-            window.alert(`Failed to update type of tag '${tagName}'.`)
+        } catch (error) {
+            showInfoModal(`Failed to update type of tag '${tagName}'.`)
         }
     })
     let clicked = false

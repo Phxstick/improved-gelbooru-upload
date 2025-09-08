@@ -24,6 +24,7 @@ import "fomantic-ui/dist/components/segment.min.css"
 import "fomantic-ui/dist/components/icon.min.css"
 import "fomantic-ui/dist/components/label.min.css"
 import "fomantic-ui/dist/components/menu.min.css"
+import "fomantic-ui/dist/components/form.min.css"
 
 import "./main.scss"
 

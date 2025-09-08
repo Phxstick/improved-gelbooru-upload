@@ -45,7 +45,7 @@ class SettingsManager {
             },
             hideTitleInput: {
                 type: "boolean",
-                text: "Hide title field"
+                text: "Hide title and description fields"
             },
             splitTagInputIntoGroups: {
                 type: "boolean",

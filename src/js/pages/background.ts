@@ -292,8 +292,9 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
     else if (request.type === "prepare-upload") {
         if (!request.data) return
         const host = request.data.host as HostName || HostName.Gelbooru
-        const { file, url, pixivTags } = request.data as {
-            file: string, url: string, pixivTags: PixivTags
+        const { file, url, pixivTags, title, description } = request.data as {
+            file: string, url: string, pixivTags: PixivTags,
+            title?: string, description?: string
         }
         if (!file || !url) return {
             error: "Data must contain the properties 'file' and 'url'."
@@ -313,7 +314,9 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
                 objectUrl: file
             },
             fileUrl: url,
-            pixivTags
+            pixivTags,
+            title,
+            description
         }
         const response = await sendToUploadPage(host, {
             type: "prepare-upload",

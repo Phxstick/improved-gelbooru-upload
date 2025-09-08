@@ -1,4 +1,4 @@
-import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, MessageType, ServerError, ArtistQuery, IndexOptions, PostAttribute } from "js/types"
+import { TagInfo, TagType, BooruApi, BooruPost, AuthError, HostName, UploadData, UploadResult, IqdbSearchParams, IqdbSearchResult, MessageType, ServerError, ArtistQuery, IndexOptions, PostAttribute, RequestError } from "js/types"
 import IQDB from "js/iqdb-search"
 import browser from "webextension-polyfill";
 import { unescapeHtml, catchError } from "js/utility"
@@ -204,6 +204,27 @@ export default class DanbooruApi implements BooruApi {
         return origin + "/profile"
     }
 
+    private async sendAuthenticatedRequest(path: string, data: any, method: "POST" | "PUT" = "PUT"): Promise<Response> {
+        if (!this.credentials) throw new AuthError()
+        const { username, apiKey } = this.credentials
+        const authParams = new URLSearchParams({
+            "login": username,
+            "api_key": apiKey
+        })
+        const url = this.getUrl(path)
+        const [response, error] = await catchError(() => fetch(url + "?" + authParams.toString(), {
+            method,
+            headers: {
+                "Content-Type": "application/json"
+            },
+            // credentials: "same-origin",
+            body: JSON.stringify(data)
+        }))
+        if (error) throw new RequestError(path)
+        if (!response.ok) throw new ServerError(response.status, response.statusText)
+        return response
+    }
+
     private normalizeTagInfo(info: RawTagInfo): TagInfo {
         const { id, name, post_count, category, is_deprecated } = info
         return {
@@ -284,33 +305,13 @@ export default class DanbooruApi implements BooruApi {
         }))
     }
 
-    async setTagType(tagName: string, tagType: TagType): Promise<boolean> {
-        if (!this.credentials) return false
-        const { username, apiKey } = this.credentials
-        try {
-            const rawTagInfo = await this.getSingleRawTagInfo(tagName)
-            if (rawTagInfo === null) return false
-            const tagId = rawTagInfo.id
-            const authParams = new URLSearchParams({
-                "login": username,
-                "api_key": apiKey,
-            })
-            const url = `${origin}/tags/${tagId}.json?${authParams.toString()}`
-            const response = await fetch(url, {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    tag: {
-                        category: tagTypeToNumber[tagType]
-                    }
-                })
-            })
-            return response.ok
-        } catch (error) {
-            return false
-        }
+    async setTagType(tagName: string, tagType: TagType) {
+        const rawTagInfo = await this.getSingleRawTagInfo(tagName)
+        if (rawTagInfo === null) throw new Error()
+        const tagId = rawTagInfo.id
+        await this.sendAuthenticatedRequest(`/tags/${tagId}.json`, {
+            tag: { category: tagTypeToNumber[tagType] }
+        })
     }
 
     private normalizePost(rawPost: RawPost): BooruPost {
@@ -440,7 +441,6 @@ export default class DanbooruApi implements BooruApi {
         const mediaAsset = showUploadResponseObject.upload_media_assets[0]
         const postData: CreateUploadParams = {}
         if (data.source) postData.source = data.source
-        if (data.title) postData.artist_commentary_title = data.title
         if (data.tags.length) postData.tag_string = data.tags.join(" ")
         if (data.rating) postData.rating = data.rating
         const postUrl = origin + "/posts.json"
@@ -463,15 +463,35 @@ export default class DanbooruApi implements BooruApi {
         if (!postResponse.ok) {
             let details
             if (postResponse.status === 422) {
-                details = "Upload limit reached."
+                details = "Upload limit reached"
             } else {
-                details = `Received status code ${postResponse.status}.`
+                details = `Received status code ${postResponse.status}`
             }
             const error = `Failed to create post (${details})`
             return { successful: false, error }
         }
         const postResponseObject = await postResponse.json() as RawPost
         const postId = postResponseObject.id
+
+        // Add title/description if given
+        if (data.title || data.description) {
+            const commentaryPath = `/posts/${postId}/artist_commentary/create_or_update.json`
+            const commentaryData: any = {}
+            if (data.title) commentaryData.original_title = data.title
+            if (data.description) commentaryData.original_description = data.description
+            try {
+                await this.sendAuthenticatedRequest(commentaryPath, {
+                    artist_commentary: commentaryData
+                })
+            } catch (e) {
+                let error = "Failed to update artist commentary"
+                if (e instanceof ServerError) {
+                    error += ` (status code ${e.status})`
+                }
+                return { successful: false, error }
+            }
+        }
+
         return { successful: true, postId, url: this.getPostUrl(postId) }
     }
 
@@ -480,53 +500,23 @@ export default class DanbooruApi implements BooruApi {
     }
 
     async createPool(name: string): Promise<string> {
-        if (!this.credentials) throw new AuthError()
-        const { username, apiKey } = this.credentials
-        const authParams = new URLSearchParams({
-            "login": username,
-            "api_key": apiKey
-        })
-        const url = origin + "/pools.json?" + authParams.toString()
-        const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pool: { name, category: "series" } })
-        })
-        if (!response.ok) return ""
+        const response = await this.sendAuthenticatedRequest("/pools.json", {
+            pool: { name, category: "series" }
+        }, "POST")
         const responseData = await response.json() as { id: number }
         return responseData.id.toString()
     }
 
-    async addToPool(postIds: number[], poolId: string): Promise<boolean> {
-        if (!this.credentials) throw new AuthError()
-        const { username, apiKey } = this.credentials
-        const authParams = new URLSearchParams({
-            "login": username,
-            "api_key": apiKey
+    async addToPool(postIds: number[], poolId: string) {
+        await this.sendAuthenticatedRequest(`/pools/${poolId}.json`, {
+            pool: { post_ids: postIds } 
         })
-        const url = `${origin}/pools/${poolId}.json?${authParams.toString()}`
-        const response = await fetch(url, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pool: { post_ids: postIds } })
-        })
-        return response.ok
     }
 
-    async setParent(postId: number, parentId: number): Promise<boolean> {
-        if (!this.credentials) throw new AuthError()
-        const { username, apiKey } = this.credentials
-        const authParams = new URLSearchParams({
-            "login": username,
-            "api_key": apiKey
+    async setParent(postId: number, parentId: number) {
+        await this.sendAuthenticatedRequest(`/posts/${postId}.json`, {
+            post: { parent_id: parentId }
         })
-        const url = `${origin}/posts/${postId}.json?${authParams.toString()}`
-        const response = await fetch(url, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ post: { parent_id: parentId } })
-        })
-        return response.ok
     }
 
     private async searchForArtistViaForm(query: ArtistQuery): Promise<ArtistInfo[]> {
@@ -569,15 +559,11 @@ export default class DanbooruApi implements BooruApi {
     }
 
     async searchForArtist(query: ArtistQuery): Promise<ArtistInfo[]> {
-        const searchFunc = this.credentials ?
-            this.searchForArtistViaApi : this.searchForArtistViaForm
-        return searchFunc(query)
+        return this.searchForArtistViaApi(query)
     }
 
     async getArtistInfo(name: string): Promise<ArtistInfo | null> {
-        const searchFunc = this.credentials ?
-            this.searchForArtistViaApi : this.searchForArtistViaForm
-        const infos = await searchFunc({ name })
+        const infos = await this.searchForArtist({ name })
         if (infos.length === 0) return null
         return infos[0]
     }

@@ -307,3 +307,7 @@ i.icon {
     margin-right: -0.5px;
   }
 }
+
+.ui.form textarea {
+  width: -webkit-fill-available;
+}

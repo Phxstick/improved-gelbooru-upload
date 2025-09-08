@@ -211,7 +211,7 @@ export default class GelbooruApi implements BooruApi {
             ({ type: category, title: label, postCount: parseInt(post_count) }))
     }
 
-    async setTagType(tagName: string, type: TagType): Promise<boolean> {
+    async setTagType(tagName: string, type: TagType) {
         const params = new URLSearchParams({
             "page": "tags",
             "s": "edit"
@@ -220,15 +220,11 @@ export default class GelbooruApi implements BooruApi {
         formData.set("tag", tagName)
         formData.set("type", type)
         formData.set("commit", "Save")  // Not sure if this is needed
-        try {
-            const response = await fetch(baseUrl + params.toString(), {
-                method: "POST",
-                body: formData
-            })
-            return response.ok
-        } catch (error) {
-            return false
-        }
+        const response = await fetch(baseUrl + params.toString(), {
+            method: "POST",
+            body: formData
+        })
+        if (!response.ok) throw new ServerError(response.status, response.statusText)
     }
 
     private normalizePost(rawPost: RawPost): BooruPost {
@@ -419,12 +415,12 @@ export default class GelbooruApi implements BooruApi {
             credentials: "same-origin",  // Send cookies
             body: formData
         })
-        if (!response.ok) return ""
+        if (!response.ok) throw new ServerError(response.status, response.statusText)
         const poolUrlParts = new URL(response.url)
         return poolUrlParts.searchParams.get("id") || ""
     }
 
-    async addToPool(gelbooruIds: number[], poolId: string): Promise<boolean> {
+    async addToPool(gelbooruIds: number[], poolId: string) {
         const params = new URLSearchParams({
             "page": "pool",
             "s": "import",
@@ -443,6 +439,6 @@ export default class GelbooruApi implements BooruApi {
             credentials: "same-origin",  // Send cookies
             body: formData
         })
-        return response.ok
+        if (!response.ok) throw new ServerError(response.status, response.statusText)
     }
 }

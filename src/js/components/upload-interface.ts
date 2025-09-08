@@ -4,7 +4,8 @@ import ArtistSearch from "js/components/artist-search"
 import WikiModal from "js/components/wiki-modal"
 import RadioButtons from "js/generic/radiobuttons"
 import Component from "js/generic/component"
-import { Settings, BooruApi, UploadData, EnhancedTags, UploadInstanceData, PixivTags, HostName } from "js/types"
+import MultilineInput from "js/generic/multiline-input";
+import { Settings, BooruApi, UploadData, EnhancedTags, UploadInstanceData, PixivTags, HostName, BasicUploadData } from "js/types"
 import { E } from "js/utility"
 
 export default class UploadInterface extends Component {
@@ -12,6 +13,7 @@ export default class UploadInterface extends Component {
     private sourceInput: HTMLInputElement
     private fileUpload: FileUpload
     private titleInput: HTMLInputElement
+    private descriptionInput: MultilineInput
     private tagInputs: TagInputs
     private artistSearch: ArtistSearch
     private ratingSelection: RadioButtons
@@ -33,6 +35,7 @@ export default class UploadInterface extends Component {
         this.sourceInput = E("input", { class: "styled-input source-input" }) as HTMLInputElement
         this.fileUpload = createImageUpload(this.sourceInput, api)
         this.titleInput = E("input", { class: "styled-input title-input"}) as HTMLInputElement
+        this.descriptionInput = new MultilineInput()
         this.pixivTagsContainer = E("div", { class: "pixiv-tags" })
         this.tagInputs = new TagInputs(tagGroupsList, api, wikiModal, {
             selectFirstResult: autoSelectFirstCompletion,
@@ -60,7 +63,10 @@ export default class UploadInterface extends Component {
         this.root = E("div", {}, [
             this.makeRow("File", this.fileUpload.getElement()),
             this.makeRow("Source", this.sourceInput),
-            this.makeRow("Title", this.titleInput, hideTitleInput),
+            this.makeRow("Title", this.titleInput,
+                         hideTitleInput || api.host === HostName.Gelbooru),
+            this.makeRow("Description", this.descriptionInput.getElement(),
+                         hideTitleInput || api.host === HostName.Gelbooru),
             this.pixivTagsContainer,
             this.tagInputs.getContainer(),
             this.makeRow("Rating", this.ratingSelection.getElement()),
@@ -71,6 +77,13 @@ export default class UploadInterface extends Component {
         return E("div", { class: "main-row" + (hidden ? " hidden" : "") }, [ 
             E("div", { class: "row-title" }, header), content
         ])
+    }
+
+    isArtistTagAdded() {
+        const { tagToType } = this.tagInputs.getGroupedTags()
+        return this.artistSearch.wasArtistTagAdded() ||
+            Object.values(tagToType).some(type => type === "artist") ||
+            Object.keys(tagToType).includes("artist request")
     }
 
     /**
@@ -93,12 +106,17 @@ export default class UploadInterface extends Component {
         if (source.length === 0 && !tags.includes("source_request")) {
             return "You must specify a source or add the tag 'source_request'."
         }
+        if ((this.titleInput.value.trim() || this.descriptionInput.getValue()) &&
+                this.api.host === HostName.Danbooru && !this.api.isAuthenticated()) {
+            return "Adding a title/description requires authentication."
+        }
     }
 
     getData(): UploadData {
         return {
             file: this.fileUpload.getFile()!,
             title: this.titleInput.value.trim(),
+            description: this.descriptionInput.getValue().trim(),
             source: this.sourceInput.value.trim(),
             tags: this.tagInputs.getTags(),
             rating: this.ratingSelection.getValue(),
@@ -125,6 +143,7 @@ export default class UploadInterface extends Component {
         this.fileUpload.reset()
         this.sourceInput.value = ""
         this.titleInput.value = ""
+        this.descriptionInput.setValue("")
         this.artistSearch.reset()
         this.clearPixivTags()
         this.tagInputs.clear()
@@ -132,21 +151,12 @@ export default class UploadInterface extends Component {
         this.root.scrollTop = 0
     }
 
-    insertData(data: Partial<UploadData>) {
+    insertData(data: Partial<BasicUploadData>) {
         if (data.title) {
             this.titleInput.value = data.title
         }
-        if (data.source) {
-            this.sourceInput.value = data.source
-        }
-        if (data.rating) {
-            this.ratingSelection.setValue(data.rating)
-        }
-    }
-
-    async insertEnhancedData(data: UploadInstanceData): Promise<CheckResult | undefined> {
-        if (data.title) {
-            this.titleInput.value = data.title
+        if (data.description) {
+            this.descriptionInput.setValue(data.description)
         }
         if (data.source) {
             // Make sure to use direct Pixiv links as source for Danbooru (this
@@ -162,6 +172,10 @@ export default class UploadInterface extends Component {
         if (data.rating) {
             this.ratingSelection.setValue(data.rating)
         }
+    }
+
+    async insertEnhancedData(data: UploadInstanceData): Promise<CheckResult | undefined> {
+        this.insertData(data)
         if (data.tags) {
             this.tagInputs.insertGroupedTags(data.tags, true)
         }

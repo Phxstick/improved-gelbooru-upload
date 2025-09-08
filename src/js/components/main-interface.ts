@@ -1,6 +1,6 @@
 import browser from "webextension-polyfill";
 import { E, showInfoModal, showConfirmModal, imageToCanvas, loadImage } from "js/utility"
-import { Settings, BooruApi, AuthError, StatusUpdate, MessageType, EnhancedTags, HostName, UploadInstanceData, PixivTags } from "js/types"
+import { Settings, BooruApi, AuthError, StatusUpdate, MessageType, EnhancedTags, HostName, UploadInstanceData, PixivTags, BasicUploadData } from "js/types"
 import ContextMenu from "js/generic/context-menu"
 import Component from "js/generic/component"
 import Selection from "js/generic/selection"
@@ -10,14 +10,11 @@ import { CheckResult } from "js/components/file-upload";
 import DanbooruApi from "js/danbooru-api";
 import "./main-interface.scss"
 
-type TabDataStore = {
-    [key in string]: {
-        title: string
-        source: string
-        rating: string
-        tags: EnhancedTags
-    }
+interface TabSaveData extends BasicUploadData {
+    tags: EnhancedTags
+    fileUrl: string
 }
+type TabDataStore = Record<string, TabSaveData>
 
 export enum TabStatus {
     Empty = "empty",
@@ -190,9 +187,9 @@ export default class MainInterface extends Component {
                     poolId = await this.api.createPool(poolName)
                 } catch (error) {
                     if (error instanceof AuthError) {
-                        window.alert(authErrorMessage)
+                        showInfoModal(authErrorMessage)
                     } else {
-                        window.alert("Failed to create pool.")
+                        showInfoModal("Failed to create pool.")
                     }
                     return
                 }
@@ -200,9 +197,9 @@ export default class MainInterface extends Component {
                     await this.api.addToPool(postIds, poolId)
                 } catch (error) {
                     if (error instanceof AuthError) {
-                        window.alert(authErrorMessage)
+                        showInfoModal(authErrorMessage)
                     } else {
-                        window.alert("Failed to add posts to pool.")
+                        showInfoModal("Failed to add posts to pool.")
                     }
                 }
             }, condition: multipleTabsSelected },
@@ -221,9 +218,9 @@ export default class MainInterface extends Component {
                     }
                 } catch (error) {
                     if (error instanceof AuthError) {
-                        window.alert(authErrorMessage)
+                        showInfoModal(authErrorMessage)
                     } else {
-                        window.alert("Failed to add posts to pool.")
+                        showInfoModal("Failed to add posts to pool.")
                         console.log(error)
                     }
                 }
@@ -337,10 +334,13 @@ export default class MainInterface extends Component {
                 const data = instance.getData()
                 const groupedTags = instance.getGroupedTags()
                 dataObject[fileUrl] = {
+                    fileUrl,
                     title: data.title,
+                    description: data.description,
                     source: data.source,
                     tags: groupedTags,
-                    rating: data.rating
+                    rating: data.rating,
+                    pixivId: data.pixivId
                 }
                 ++numAdded
             }
@@ -382,6 +382,7 @@ export default class MainInterface extends Component {
                 const instance = this.tabToInstance.get(newTab)!
                 instance.insertData({
                     title: data.title,
+                    description: data.description,
                     source: data.source,
                     rating: data.rating
                 })
@@ -564,6 +565,11 @@ export default class MainInterface extends Component {
                 statusContainer.innerHTML = "Upload failed"
                 this.setTabStatus(tab, TabStatus.UploadFailed, error)
                 encounteredError = true
+            }
+            if (!instance.isArtistTagAdded()) {
+                const confirmed = await showConfirmModal(
+                    "No artist tag has been added.<br>Are you sure you want to upload?")
+                if (!confirmed) return
             }
         }
 

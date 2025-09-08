@@ -17,12 +17,14 @@ export default class ArtistSearch extends Component {
     private recentlySearchedArtists: DropdownMenu
     private searching: boolean
     private quickSearchPossible: boolean
+    private artistTagAdded: boolean
 
     constructor(tagInput: TagSearch<TagInfo>, fileUpload: FileUpload, api?: BooruApi) {
         super()
         this.searching = false
-        this.quickSearchPossible = false
         this.tagInput = tagInput
+        this.quickSearchPossible = false
+        this.artistTagAdded = false
 
         // Use existing API instance if on Danbooru, otherwise create a new one
         if (api && api.host === HostName.Danbooru) {
@@ -39,7 +41,10 @@ export default class ArtistSearch extends Component {
         }) as HTMLInputElement
         this.recentlySearchedArtists = new DropdownMenu({
             header: "Recently searched artists",
-            onSelect: (value) => this.tagInput.addSelected(value, "artist")
+            onSelect: (value) => {
+                this.tagInput.addSelected(value, "artist")
+                this.artistTagAdded = true
+            }
         })
         this.root = E("div", { class: "artist-search-wrapper" }, [
             this.searchField,
@@ -80,14 +85,14 @@ export default class ArtistSearch extends Component {
         })
         this.searchField.addEventListener("focusout", () => {
             if (this.searching) return
-            this.reset()
+            if (!this.artistTagAdded) this.resetLabel()
         })
 
         // Upon upload, determine if quick search is possible
         // (if the file contains a URL from Pixiv)
         const quickSearchHosts = ["i.pximg.net", "www.pixiv.net"]
         fileUpload.addFileUploadListener(() => {
-            this.quickSearchPossible = false
+            this.reset()
             const url = fileUpload.getUrl()
             if (url) {
                 const urlParts = new URL(url)
@@ -95,7 +100,6 @@ export default class ArtistSearch extends Component {
                     this.quickSearchPossible = true
                 }
             }
-            this.reset()
         })
         // If quick search is possible, it can be triggered with just a click
         this.searchField.addEventListener("click", async () => {
@@ -132,12 +136,23 @@ export default class ArtistSearch extends Component {
         this.searchField.placeholder = text
     }
 
-    reset() {
+    private resetLabel() {
         if (this.quickSearchPossible) {
             this.setStatus("Click here to search for the artist tag", "placeholder")
         } else {
             this.setStatus("Drag artist page URL here to find artist tag", "placeholder")
         }
+    }
+
+    wasArtistTagAdded() {
+        return this.artistTagAdded
+    }
+
+    reset() {
+        this.artistTagAdded = false
+        this.quickSearchPossible = false
+        this.artistTagAdded = false
+        this.resetLabel()
     }
 
     /**
@@ -179,6 +194,7 @@ export default class ArtistSearch extends Component {
         // Insert artist tags into the first tag input, update status message
         artistTags.forEach(artist => this.tagInput.addSelected(
             artist.name.replaceAll("_", " "), "artist", artist.isBanned))
+        this.artistTagAdded = true
         const tag_s = tagNames.length === 1 ? "tag" : "tags"
         this.setStatus(`Found following ${tag_s}: ` + tagNames.join(", "), "success")
         
