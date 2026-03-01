@@ -1,8 +1,9 @@
 import browser from "webextension-polyfill";
 import { Md5 } from "ts-md5";
 import { E, imageToCanvas, loadImage, showInfoModal } from "js/utility";
-import { BooruApi, BooruPost, HostName, StatusUpdate, MessageType } from "js/types";
+import { BooruApi, BooruPost, StatusUpdate, MessageType, SourceHost, SourceInfo } from "js/types";
 import "./file-upload.scss";
+import SourceHosts from "js/sources/source-hosts";
 
 export type FileUploadCallback = (objectUrl: string) => void
 export type CheckResultCallback = (checkResult: CheckResult) => void
@@ -32,25 +33,25 @@ type ImageInfoOrError = {
     error?: string
 }
 
-const pixivHelperExtensionUrl = "https://chromewebstore.google.com/detail/pixiv-to-gelbooru-upload/hbghinibnihlfahabmgdanonolmihbko"
-const pixivHelperExtensionLink = `<b><a href=${pixivHelperExtensionUrl} target="_blank">Pixiv to Gelbooru upload helper</a></b>`
+const helperExtensionUrl = "https://chromewebstore.google.com/detail/pixiv-to-gelbooru-upload/hbghinibnihlfahabmgdanonolmihbko"
+const helperExtensionLink = `<b><a href=${helperExtensionUrl} target="_blank">Pixiv to Gelbooru upload helper</a></b>`
 
 const pixivInfoModalText = `
 Pixiv images cannot be directly downloaded.
 You can either drag and drop an image here
-or install the extension ${pixivHelperExtensionLink}
+or install the extension ${helperExtensionLink}
 (which is the most convenient method as it allows you to
 simply click an artwork while pressing the Ctrl key).
 `.trim()
 
-const pixivSuggestionModalText = `
+const helperSuggestionText = `
 Pixiv artwork can be uploaded more conveniently by using the browser extension
-${pixivHelperExtensionLink}.
+${helperExtensionLink}.
 Simply click a Pixiv artwork while pressing the Ctrl key to download the full-size
 version and send it to the upload page (no need to manually drag it).
 `.trim()
 
-const PIXIV_HELPER_RECOMMENDATION_DATE_KEY = "pixiv-helper-recommendation-date"
+const HELPER_RECOMMENDATION_DATE_KEY = "pixiv-helper-recommendation-date"
 
 async function getImageInfo(event: ClipboardEvent): Promise<ImageInfoOrError> {
     if (!event.clipboardData) return {
@@ -142,13 +143,14 @@ async function getImageInfo(event: ClipboardEvent): Promise<ImageInfoOrError> {
 }
 
 async function downloadImage(url: string): Promise<Blob | undefined> {
-    const parsedUrl = new URL(url)
     let finalUrl = url
-    // If the image is from Pixiv, let the Pixiv extension download it
-    if (parsedUrl.hostname === "i.pximg.net") {
+
+    // Let helper extension download image if source disallows direct downloads
+    const knownSource = SourceHosts.extractSourceHost(url)
+    if (knownSource && !SourceHosts.isDirectDownloadPossible(knownSource)) {
         try {
             const { dataUrl } = await browser.runtime.sendMessage({
-                type: MessageType.DownloadPixivImage,
+                type: MessageType.DownloadImage,
                 args: { url }
             })
             if (!dataUrl) return
@@ -174,7 +176,8 @@ export interface FileUpload {
     getUrl: () => string
     setUrl: (url: string) => void
     getObjectUrl: () => string
-    getPixivId: () => string
+    getSourceInfo: () => SourceInfo | undefined
+    setSourceInfo: (sourceInfo: SourceInfo) => void
     getCheckResult: () => Promise<CheckResult> | undefined
     reset: () => void
     runChecks: () => Promise<CheckResult>
@@ -189,7 +192,7 @@ export interface FileUpload {
 export default function createImageUpload(sourceInput: HTMLInputElement, api: BooruApi): FileUpload {
     let foundMd5Match = false
     let loadedUrl = ""
-    let loadedPixivId = ""
+    let sourceInfo: SourceInfo | undefined
     let objectUrl = ""
     const uploadListeners: FileUploadCallback[] = []
     const checkStartListeners: CheckStartCallback[] = []
@@ -215,36 +218,26 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     // Define functions for setting file data (the parameter "dropped" should
     // be set to true if the data actually originated from a real drop event)
     const handleDropData = (dataTransfer: DataTransfer, dropped=true): Promise<CheckResult> => {
-        const url = dataTransfer.getData("text/uri-list")
-        loadedUrl = url
-        if (url) {
-            const urlParts = new URL(url)
+        loadedUrl = dataTransfer.getData("text/uri-list")
+        if (loadedUrl) {
+            // Try to infer value of source input from file URL if possible
+            const sourceUrl = SourceHosts.getSourceUrl(loadedUrl, api.host)
+            if (sourceUrl) {
+                sourceInput.value = sourceUrl
 
-            // Special handling for Pixiv artwork
-            if (urlParts.hostname === "i.pximg.net") {
-                // Automatically fill in source URL
-                if (api.host === HostName.Danbooru) {
-                    sourceInput.value = url  // Danbooru wants the direct image URL
-                } else {
-                    const pathParts = urlParts.pathname.split("/")
-                    const filename = pathParts[pathParts.length - 1]
-                    const pixivId = filename.split("_")[0]
-                    sourceInput.value = `https://www.pixiv.net/artworks/${pixivId}`
-                }
-
-                // Suggest using Pixiv helper extension (but only do so once)
+                // Suggest using helper extension (but only do so once)
                 if (dropped) {
-                    const key = PIXIV_HELPER_RECOMMENDATION_DATE_KEY
+                    const key = HELPER_RECOMMENDATION_DATE_KEY
                     browser.storage.sync.get(key).then(data => {
                         const recommendationDate = (key in data) ? Date.parse(data[key]) : null
                         if (recommendationDate !== null) return
-                        showInfoModal(pixivSuggestionModalText, { dimmer: true, closable: false })
+                        showInfoModal(helperSuggestionText, { dimmer: true, closable: false })
                         browser.storage.sync.set({ [key]: Date.now().toString() })
                     })
                 }
             }
         }
-        // Set input file to dragged one and trigger listeners of change event
+        // Set dragged file as input and trigger listeners of change event
         fileInput.files = dataTransfer.files
         return new Promise((resolve) => {
             fileInput.dispatchEvent(new Event("change"))
@@ -436,11 +429,11 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         const posts: { [key in number]: BooruPost } = {}
         if (postsList) postsList.forEach(post => { posts[post.id] = post })
         const result = onCheckResult({ postIds, posts })
-        if (!loadedPixivId) return result
+        if (!sourceInfo) return result
         const statusUpdate: StatusUpdate = {
-            host: api.host,
-            pixivId: loadedPixivId,
+            sourceInfo,
             filename: fileInput.files![0].name,
+            postHost: api.host,
             postIds,
             posts
         }
@@ -475,20 +468,24 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         }
     }
     
-    const performSourceSearch = async (pixivId: string): Promise<CheckResult | undefined> => {
+    const performSourceSearch = async (sourceInfo: SourceInfo): Promise<CheckResult | undefined> => {
         checkStartListeners.forEach(listener => listener(CheckType.source))
         sourceMatchesContainer.classList.add("hidden")
         sourceMatchesHeader.classList.add("hidden")
         sourceMatchesWrapper.classList.remove("hidden")
 
-        // Perform search (try searching for both "pixiv" and "pximg")
-        searchingBySourceMessage.textContent = `Searching for posts with Pixiv ID ${pixivId}...`
+        const hostDisplayName = SourceHosts.getDisplayName(sourceInfo.host)
+        const idString = `${hostDisplayName} ID ${sourceInfo.id}`
+
+        // Perform search
+        searchingBySourceMessage.textContent = `Searching for posts with ${idString}...`
         searchingBySourceMessage.classList.remove("hidden")
-        let sourceQuery = `source:*pixiv*${pixivId}*`
-        let posts = await api.searchPosts([sourceQuery])
-        if (posts.length === 0) {
-            sourceQuery = `source:*pximg*${pixivId}*`
-            posts = await api.searchPosts([`source:*pximg*${pixivId}*`])
+        let posts: BooruPost[] = []
+        let sourceQuery: string = ""
+        const sourceQueries = SourceHosts.getSourceQueries(sourceInfo)
+        for (sourceQuery of sourceQueries) {
+            posts = await api.searchPosts([`source:${sourceQuery}`])
+            if (posts.length > 0) break
         }
         searchingBySourceMessage.classList.add("hidden")
 
@@ -497,14 +494,14 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         sourceMatchesHeader.classList.toggle("failure", posts.length > 0)
         sourceMatchesHeader.classList.remove("hidden")
         if (posts.length === 0) {
-            sourceMatchesHeader.innerHTML = `Found no posts matching Pixiv ID ${pixivId} ✔`
+            sourceMatchesHeader.innerHTML = `Found no posts matching ${idString} ✔`
             return
         }
         const postInflection = posts.length === 1 ? "post" : "posts"
         const postsLink = posts.length === 1 ?
             api.getPostUrl(posts[0].id) : api.getQueryUrl([sourceQuery])
         sourceMatchesHeader.innerHTML = `Found <a target="_blank" href="${postsLink}">`
-            + `${posts.length} ${postInflection}</a> matching Pixiv ID ${pixivId}`
+            + `${posts.length} ${postInflection}</a> matching ${idString}`
         
         // List matching posts
         sourceMatchesContainer.innerHTML = ""
@@ -671,9 +668,9 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             // (false positives are theoretically possible but highly unlikely, so not worth handling)
             if (result) return result
 
-            // Do a source check using the pixiv ID if available
-            if (loadedPixivId) {
-                result = await performSourceSearch(loadedPixivId)
+            // Do a source check using the source ID if available
+            if (sourceInfo) {
+                result = await performSourceSearch(sourceInfo)
                 if (result) {
                     // If source search found matches, IQDB search may not be necessary,
                     // so just display a button to let user manually start search if needed
@@ -721,7 +718,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         // If given filename uses the Pixiv pattern, extract and remember the ID
         const pixivRegex = /(\d+)_p\d+/
         const pixivMatch = file.name.match(pixivRegex)
-        loadedPixivId = pixivMatch !== null ? pixivMatch[1] : ""
+        sourceInfo = pixivMatch !== null ?
+            { id: pixivMatch[1], host: SourceHost.Pixiv } : undefined
 
         uploadListeners.forEach(listener => listener(objectUrl))
         if (!isVideo(file)) {
@@ -735,7 +733,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     const resetFunction = () => {
         fileInput.value = ""
         loadedUrl = ""
-        loadedPixivId = ""
+        sourceInfo = undefined
         if (objectUrl) URL.revokeObjectURL(objectUrl)
         objectUrl = ""
         checkResult = undefined
@@ -768,7 +766,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         //     videoPreviewLarge : imagePreviewLarge,
         getUrl: () => loadedUrl,
         setUrl: (url: string) => { loadedUrl = url },
-        getPixivId: () => loadedPixivId,
+        getSourceInfo: () => sourceInfo,
+        setSourceInfo: (value) => { sourceInfo = value },
         getObjectUrl: () => objectUrl,
         getCheckResult: () => checkResult,
         handleDropData,

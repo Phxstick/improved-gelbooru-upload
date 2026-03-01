@@ -55,6 +55,18 @@ export enum HostName {
     Danbooru = "danbooru"
 }
 
+export enum SourceHost {
+    Pixiv = "pixiv",
+    Nijie = "nijie"
+}
+
+export type SourceId = string
+
+export interface SourceInfo {
+    host: SourceHost
+    id: SourceId
+}
+
 export interface IqdbSearchParams {
     host: HostName
     fileUrl: string
@@ -83,7 +95,7 @@ export interface BasicUploadData {
     rating: string
     title: string
     description?: string
-    pixivId?: string
+    sourceInfo?: SourceInfo
     fileUrl?: string
 }
 
@@ -103,7 +115,7 @@ export interface UploadFailure {
 }
 export type UploadResult = UploadSuccess | UploadFailure
 
-export type PixivTags = { [key in string]: string }
+export type SourceTags = { [key in string]: string }
 export interface UploadInstanceData extends Partial<BasicUploadData> {
     file?: {
         objectUrl: string
@@ -111,7 +123,7 @@ export interface UploadInstanceData extends Partial<BasicUploadData> {
         type: string
     }
     tags?: EnhancedTags
-    pixivTags?: PixivTags
+    sourceTags?: SourceTags
 }
 
 export interface IndexOptions {
@@ -166,9 +178,9 @@ export class ServerError extends Error {
 }
 
 export interface StatusUpdate {
-    host: HostName
-    pixivId: string
     filename: string
+    sourceInfo: SourceInfo
+    postHost: HostName
     postIds: number[]
     posts?: { [key in number]: BooruPost }
 }
@@ -184,7 +196,7 @@ export enum MessageType {
     OpenExtensionOptions = "open-extension-options",
     NotifyAssociatedExtensions = "notify-associated-extensions",
     RegisterUploadPageTab = "register-upload-page-tab",
-    DownloadPixivImage = "download-pixiv-image",
+    DownloadImage = "download-image",
     DownloadPage = "download-page",
     PrepareUpload = "prepare-upload",
     FocusTab = "focus-tab"

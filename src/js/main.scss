@@ -139,16 +139,16 @@ input:focus {
   outline: none;
 }
 
-.pixiv-tags {
+.source-tags {
   margin-top: 10px;
 }
 
-.pixiv-tag-wrapper {
+.source-tag-wrapper {
   margin-top: 2px;
   margin-right: 12px;
   display: inline-block;
 
-  .pixiv-tag {
+  .source-tag {
     color: rgb(61, 118, 153);
     display: inline-block;
     max-width: 68px;
@@ -157,7 +157,7 @@ input:focus {
     text-overflow: ellipsis;
     vertical-align: top;  // Remove white-space caused by inline-block + hidden overflow, see a/51088033
   }
-  .translated-pixiv-tag {
+  .translated-source-tag {
     color: #707070;
     font-size: 0.9rem;
     margin-left: 4px;

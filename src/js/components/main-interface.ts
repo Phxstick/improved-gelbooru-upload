@@ -1,14 +1,15 @@
 import browser from "webextension-polyfill";
 import { E, showInfoModal, showConfirmModal, imageToCanvas, loadImage } from "js/utility"
-import { Settings, BooruApi, AuthError, StatusUpdate, MessageType, EnhancedTags, HostName, UploadInstanceData, PixivTags, BasicUploadData } from "js/types"
+import { Settings, BooruApi, AuthError, StatusUpdate, MessageType, EnhancedTags, HostName, UploadInstanceData, SourceTags, BasicUploadData } from "js/types"
 import ContextMenu from "js/generic/context-menu"
 import Component from "js/generic/component"
 import Selection from "js/generic/selection"
 import UploadInterface from "js/components/upload-interface"
 import WikiModal from "js/components/wiki-modal"
 import { CheckResult } from "js/components/file-upload";
-import DanbooruApi from "js/danbooru-api";
+import DanbooruApi from "js/api/danbooru-api";
 import "./main-interface.scss"
+import SourceHosts from "js/sources/source-hosts";
 
 interface TabSaveData extends BasicUploadData {
     tags: EnhancedTags
@@ -340,7 +341,7 @@ export default class MainInterface extends Component {
                     source: data.source,
                     tags: groupedTags,
                     rating: data.rating,
-                    pixivId: data.pixivId
+                    sourceInfo: data.sourceInfo
                 }
                 ++numAdded
             }
@@ -429,7 +430,7 @@ export default class MainInterface extends Component {
         instanceElement.classList.add("hidden")
         this.interfaceWrapper.appendChild(instanceElement)
         uploadInstance.addFileUploadListener(async (objectUrl) => {
-            uploadInstance.clearPixivTags()
+            uploadInstance.clearSourceTags()
         
             // Load large image preview
             if (this.selectedTab === tab && this.settings.showLargeImagePreview) {
@@ -606,11 +607,13 @@ export default class MainInterface extends Component {
                 this.setTabStatus(tab, TabStatus.UploadSuccess, "Upload successful! Created post with ID " + postLink)
                 resultIds.push(result.postId)
 
-                // Notify associated extensions if an image from Pixiv has been uploaded
-                if (uploadData.pixivId) {
+                // Notify associated extensions if an image from a known source has been uploaded
+                const sourceInfo = uploadData.sourceInfo
+                    || SourceHosts.extractSourceInfo(uploadData.source)
+                if (sourceInfo) {
                     const statusUpdate: StatusUpdate = {
-                        host: this.api.host,
-                        pixivId: uploadData.pixivId,
+                        postHost: this.api.host,
+                        sourceInfo,
                         filename: uploadData.file.name,
                         postIds: [result.postId]
                     }

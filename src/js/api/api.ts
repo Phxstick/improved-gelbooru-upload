@@ -1,6 +1,6 @@
 import SettingsManager from "js/settings-manager"
-import GelbooruApi from "js/gelbooru-api"
-import DanbooruApi from "js/danbooru-api"
+import GelbooruApi from "js/api/gelbooru-api"
+import DanbooruApi from "js/api/danbooru-api"
 import { BooruApi, HostName, Settings } from "js/types"
 
 export async function getApi(

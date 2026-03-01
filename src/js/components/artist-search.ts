@@ -6,7 +6,8 @@ import { E } from "js/utility"
 import "./artist-search.scss"
 import { FileUpload } from "js/components/file-upload";
 import { BooruApi, HostName, TagInfo } from "js/types";
-import DanbooruApi from "js/danbooru-api";
+import DanbooruApi from "js/api/danbooru-api";
+import SourceHosts from "js/sources/source-hosts";
 
 const RECENT_ARTISTS_KEY = "recentlySearchedArtists"
 
@@ -19,7 +20,12 @@ export default class ArtistSearch extends Component {
     private quickSearchPossible: boolean
     private artistTagAdded: boolean
 
-    constructor(tagInput: TagSearch<TagInfo>, fileUpload: FileUpload, api?: BooruApi) {
+    constructor(
+        tagInput: TagSearch<TagInfo>,
+        fileUpload: FileUpload,
+        getSourceUrl: () => string,
+        api?: BooruApi
+    ) {
         super()
         this.searching = false
         this.tagInput = tagInput
@@ -88,24 +94,22 @@ export default class ArtistSearch extends Component {
             if (!this.artistTagAdded) this.resetLabel()
         })
 
-        // Upon upload, determine if quick search is possible
-        // (if the file contains a URL from Pixiv)
-        const quickSearchHosts = ["i.pximg.net", "www.pixiv.net"]
+        // Reset state upon file upload
         fileUpload.addFileUploadListener(() => {
             this.reset()
-            const url = fileUpload.getUrl()
-            if (url) {
-                const urlParts = new URL(url)
-                if (quickSearchHosts.includes(urlParts.hostname)) {
-                    this.quickSearchPossible = true
-                }
-            }
         })
         // If quick search is possible, it can be triggered with just a click
         this.searchField.addEventListener("click", async () => {
-            if (this.searching || !this.quickSearchPossible) return
+            if (this.searching) return
+            const fileUrl = fileUpload.getUrl()
+            const sourceUrl = getSourceUrl()
+            let quickSearchUrl =
+                fileUrl && SourceHosts.isArtistSearchPossible(fileUrl) ? fileUrl :
+                sourceUrl && SourceHosts.isArtistSearchPossible(sourceUrl) ? sourceUrl :
+                null
+            if (!quickSearchUrl) return
             this.quickSearchPossible = false
-            this.searchByUrl(fileUpload.getUrl())
+            this.searchByUrl(quickSearchUrl)
         })
 
         // Start search when pasting a URL
@@ -151,13 +155,12 @@ export default class ArtistSearch extends Component {
     reset() {
         this.artistTagAdded = false
         this.quickSearchPossible = false
-        this.artistTagAdded = false
         this.resetLabel()
     }
 
     /**
      * Search the Danbooru artist database for a given artist via URL.
-     * @param url Any URL associated the artist, e.g. the URL of a pixiv post.
+     * @param url Any URL associated with the artist, e.g. the URL of a Pixiv post.
      * @returns Whether at least one artist tag has been found.
      */
     async searchByUrl(url: string): Promise<boolean> {

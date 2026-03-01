@@ -5,8 +5,9 @@ import WikiModal from "js/components/wiki-modal"
 import RadioButtons from "js/generic/radiobuttons"
 import Component from "js/generic/component"
 import MultilineInput from "js/generic/multiline-input";
-import { Settings, BooruApi, UploadData, EnhancedTags, UploadInstanceData, PixivTags, HostName, BasicUploadData } from "js/types"
+import { Settings, BooruApi, UploadData, EnhancedTags, UploadInstanceData, SourceTags, HostName, BasicUploadData } from "js/types"
 import { E } from "js/utility"
+import SourceHosts from "js/sources/source-hosts";
 
 export default class UploadInterface extends Component {
     private api: BooruApi
@@ -17,7 +18,7 @@ export default class UploadInterface extends Component {
     private tagInputs: TagInputs
     private artistSearch: ArtistSearch
     private ratingSelection: RadioButtons
-    private pixivTagsContainer: HTMLElement
+    private sourceTagsContainer: HTMLElement
 
     private static id = 0
 
@@ -36,7 +37,7 @@ export default class UploadInterface extends Component {
         this.fileUpload = createImageUpload(this.sourceInput, api)
         this.titleInput = E("input", { class: "styled-input title-input"}) as HTMLInputElement
         this.descriptionInput = new MultilineInput()
-        this.pixivTagsContainer = E("div", { class: "pixiv-tags" })
+        this.sourceTagsContainer = E("div", { class: "source-tags" })
         this.tagInputs = new TagInputs(tagGroupsList, api, wikiModal, {
             selectFirstResult: autoSelectFirstCompletion,
             postCountThreshold: minimumPostCount,
@@ -44,7 +45,7 @@ export default class UploadInterface extends Component {
             searchDelay
         })
         this.artistSearch = new ArtistSearch(
-            this.tagInputs.getFirst(), this.fileUpload, api)
+            this.tagInputs.getFirst(), this.fileUpload, () => this.sourceInput.value, api)
         this.ratingSelection = new RadioButtons({
             // Name needs to be different across instances, otherwise all radiobuttons
             // will be associated with each other and only one will be globally active
@@ -67,7 +68,7 @@ export default class UploadInterface extends Component {
                          hideTitleInput || api.host === HostName.Gelbooru),
             this.makeRow("Description", this.descriptionInput.getElement(),
                          hideTitleInput || api.host === HostName.Gelbooru),
-            this.pixivTagsContainer,
+            this.sourceTagsContainer,
             this.tagInputs.getContainer(),
             this.makeRow("Rating", this.ratingSelection.getElement()),
         ])
@@ -115,18 +116,19 @@ export default class UploadInterface extends Component {
     getData(): UploadData {
         return {
             file: this.fileUpload.getFile()!,
-            title: this.titleInput.value.trim(),
-            description: this.descriptionInput.getValue().trim(),
+            title: this.api.host === HostName.Danbooru ?
+                   this.titleInput.value.trim() : "",
+            description: this.api.host === HostName.Danbooru ?
+                         this.descriptionInput.getValue().trim() : "",
             source: this.sourceInput.value.trim(),
             tags: this.tagInputs.getTags(),
             rating: this.ratingSelection.getValue(),
-            pixivId: this.fileUpload.getPixivId()
+            sourceInfo: this.fileUpload.getSourceInfo()
         }
     }
 
     getEnhancedData(): UploadInstanceData {
         const file = this.fileUpload.getFile()
-        const data = this.getData()
         return {
             ...this.getData(),
             file: file ? {
@@ -145,7 +147,7 @@ export default class UploadInterface extends Component {
         this.titleInput.value = ""
         this.descriptionInput.setValue("")
         this.artistSearch.reset()
-        this.clearPixivTags()
+        this.clearSourceTags()
         this.tagInputs.clear()
         this.ratingSelection.reset()
         this.root.scrollTop = 0
@@ -159,15 +161,15 @@ export default class UploadInterface extends Component {
             this.descriptionInput.setValue(data.description)
         }
         if (data.source) {
-            // Make sure to use direct Pixiv links as source for Danbooru (this
-            // is relevant when data is copied from Gelbooru upload page which
-            // uses non-direct links)
-            if (this.api.host === HostName.Danbooru && data.fileUrl &&
-                    data.fileUrl.includes("i.pximg.net")) {
-                this.sourceInput.value = data.fileUrl
-            } else {
-                this.sourceInput.value = data.source
+            // Pass source info to file upload component if available
+            const sourceInfo = SourceHosts.extractSourceInfo(data.source)
+            if (sourceInfo) {
+                this.fileUpload.setSourceInfo(sourceInfo)
             }
+            // The correct source URL can depend on a combination of both source
+            // host and target host, so attempt to derive it from the file URL
+            // first instead of taking the given source URL directly
+            this.sourceInput.value = (data.fileUrl && SourceHosts.getSourceUrl(data.fileUrl, this.api.host)) || data.source || ""
         }
         if (data.rating) {
             this.ratingSelection.setValue(data.rating)
@@ -195,10 +197,10 @@ export default class UploadInterface extends Component {
                 }
             }
         }
-        if (data.pixivTags) {
-            const pixivTags = data.pixivTags
-            // Timeout is needed so on-upload handler doesn't immediately clear tags again
-            setTimeout(() => this.displayPixivTags(pixivTags), 0)
+        if (data.sourceTags) {
+            const sourceTags = data.sourceTags
+            // Timeout is needed so that on-upload handler doesn't immediately clear tags again
+            setTimeout(() => this.displaySourceTags(sourceTags), 0)
         }
         return checkResult
     }
@@ -235,25 +237,25 @@ export default class UploadInterface extends Component {
         this.tagInputs.insertGroupedTags(tagData)
     }
 
-    displayPixivTags(pixivTags: PixivTags) {
-        this.pixivTagsContainer.innerHTML = ""
-        for (const tagName in pixivTags) {
-            const translatedTag = pixivTags[tagName]
-            const tagWrapper = E("span", { class: "pixiv-tag-wrapper" }, [
-                E("span", { class: "pixiv-tag" }, tagName),
+    displaySourceTags(sourceTags: SourceTags) {
+        this.sourceTagsContainer.innerHTML = ""
+        for (const tagName in sourceTags) {
+            const translatedTag = sourceTags[tagName]
+            const tagWrapper = E("span", { class: "source-tag-wrapper" }, [
+                E("span", { class: "source-tag" }, tagName),
             ])
             if (tagName === "Original")
                 tagWrapper.style.fontWeight = "bold"
             if (translatedTag) {
                 tagWrapper.appendChild(
-                    E("span", { class: "translated-pixiv-tag" }, translatedTag))
+                    E("span", { class: "translated-source-tag" }, translatedTag))
             }
-            this.pixivTagsContainer.appendChild(tagWrapper)
+            this.sourceTagsContainer.appendChild(tagWrapper)
         }
     }
 
-    clearPixivTags() {
-        this.pixivTagsContainer.innerHTML = ""
+    clearSourceTags() {
+        this.sourceTagsContainer.innerHTML = ""
     }
 
     copyTags(cut=false): boolean {

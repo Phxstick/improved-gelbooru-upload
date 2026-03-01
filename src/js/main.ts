@@ -33,7 +33,7 @@ import { E } from "js/utility"
 import SettingsManager from "js/settings-manager"
 import MainInterface from "js/components/main-interface"
 import { HostName, BooruApi, MessageType, UploadInstanceData } from "js/types"
-import { getApi } from "js/api"
+import { getApi } from "js/api/api"
 import ChangelogModal from "js/components/changelog-modal"
 
 // Import font here because it doesn't work with pure CSS in a content script

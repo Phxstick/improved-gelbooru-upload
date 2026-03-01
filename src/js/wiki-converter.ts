@@ -1,4 +1,4 @@
-import DanbooruApi from "js/danbooru-api"
+import DanbooruApi from "js/api/danbooru-api"
 import { BooruApi } from "js/types"
 import { E, escapeHtml, replaceSubstrings, unescapeHtml } from "js/utility"
 

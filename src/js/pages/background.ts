@@ -1,15 +1,15 @@
 import browser from "webextension-polyfill";
 import SettingsManager from "js/settings-manager";
-import { HostName, StatusUpdate, MessageType, ArtistQuery, PixivTags, UploadInstanceData } from "js/types";
-import { getApi } from "js/api"
-import DanbooruApi from "js/danbooru-api";
+import { HostName, StatusUpdate, MessageType, ArtistQuery, SourceTags, UploadInstanceData } from "js/types";
+import { getApi } from "js/api/api"
+import DanbooruApi from "js/api/danbooru-api";
 
-const PIXIV_EXTENSION_STORE_ID = "hbghinibnihlfahabmgdanonolmihbko"
-const PIXIV_EXTENSION = PRODUCTION ? PIXIV_EXTENSION_STORE_ID :
-    (PIXIV_HELPER_EXTENSION_ID || PIXIV_EXTENSION_STORE_ID)
+const HELPER_EXTENSION_STORE_ID = "hbghinibnihlfahabmgdanonolmihbko"
+const HELPER_EXTENSION = PRODUCTION ? HELPER_EXTENSION_STORE_ID :
+    (PIXIV_HELPER_EXTENSION_ID || HELPER_EXTENSION_STORE_ID)
 
 const associatedExtensions = [
-    PIXIV_EXTENSION,
+    HELPER_EXTENSION,
 ]
 const uploadTabsKey = "uploadTabs"
 const uploadTabOpeningKey = "openingUploadTab"
@@ -102,26 +102,27 @@ async function queryIqdb(host: HostName, url: string, filename: string) {
 }
 
 function notifyAssociatedExtensions(statusUpdate: StatusUpdate) {
-    const { host, pixivId, filename, postIds, posts } = statusUpdate
+    const { sourceInfo, postHost, filename, postIds, posts } = statusUpdate
     const postIdStrings = postIds.map(id => id.toString())
     const args: any = {
-        pixivIdToPostIds: {
-            [pixivId]: {
-                [host]: postIdStrings
+        sourceHost: sourceInfo.host,
+        sourceIdToPostIds: {
+            [sourceInfo.id]: {
+                [postHost]: postIdStrings
             }
         },
         filenameToPostIds: {
             [filename]: {
-                [host]: postIdStrings
+                [postHost]: postIdStrings
             }
         },
         posts: posts ? {
-            [host]: posts
+            [postHost]: posts
         } : {}
     }
     for (const extensionId of associatedExtensions) {
         browser.runtime.sendMessage(extensionId, {
-            type: "pixiv-status-update",
+            type: "status-update",
             args
         }).catch(() => {})
     }
@@ -259,9 +260,9 @@ browser.runtime.onMessage.addListener(async (request, sender) => {
         if (!sender.tab || !sender.tab.id) return
         registerUploadTab(args.host as HostName, sender.tab.id)
     }
-    else if (request.type === MessageType.DownloadPixivImage) {
-        return browser.runtime.sendMessage(PIXIV_EXTENSION, {
-            type: "download-pixiv-image",
+    else if (request.type === MessageType.DownloadImage) {
+        return browser.runtime.sendMessage(HELPER_EXTENSION, {
+            type: "download-image",
             args
         })
     }
@@ -292,17 +293,17 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
     else if (request.type === "prepare-upload") {
         if (!request.data) return
         const host = request.data.host as HostName || HostName.Gelbooru
-        const { file, url, pixivTags, title, description } = request.data as {
-            file: string, url: string, pixivTags: PixivTags,
-            title?: string, description?: string
+        const { file, fileUrl, pageUrl, sourceTags, title, description } = request.data as {
+            file: string, fileUrl: string, pageUrl: string,
+            sourceTags: SourceTags, title?: string, description?: string
         }
-        if (!file || !url) return {
-            error: "Data must contain the properties 'file' and 'url'."
+        if (!file || !fileUrl) return {
+            error: "Data must contain the properties 'file' and 'imageUrl'."
         }
-        const urlParts = url.split("/")
+        const urlParts = fileUrl.split("/")
         const fileName = urlParts[urlParts.length - 1]
-        const dotIndex = url.lastIndexOf(".")
-        const fileExtension = dotIndex >= 0 ? url.slice(dotIndex) : "jpg"
+        const dotIndex = fileUrl.lastIndexOf(".")
+        const fileExtension = dotIndex >= 0 ? fileUrl.slice(dotIndex) : "jpg"
         const fileType = {
             "jpg": "image/jpeg",
             "png": "image/png"
@@ -313,8 +314,9 @@ browser.runtime.onMessageExternal.addListener(async (request, sender) => {
                 type: fileType,
                 objectUrl: file
             },
-            fileUrl: url,
-            pixivTags,
+            fileUrl,
+            source: pageUrl,
+            sourceTags,
             title,
             description
         }

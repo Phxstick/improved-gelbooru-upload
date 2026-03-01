@@ -4,7 +4,7 @@ import WikiModal from "js/components/wiki-modal"
 import { BooruApi, TagType, TagInfo, HostName, EnhancedTags } from "js/types";
 import { E, showInfoModal } from "js/utility";
 import "./tag-inputs.scss"
-import DanbooruApi from "js/danbooru-api";
+import DanbooruApi from "js/api/danbooru-api";
 
 // Create a popup menu for choosing a different tag type
 function openTagTypePopup(tagElement: HTMLElement, api: BooruApi) {

@@ -9,6 +9,8 @@
   padding: 7px;
   padding-left: 10px;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
   &.placeholder {
     color: dimgrey;
