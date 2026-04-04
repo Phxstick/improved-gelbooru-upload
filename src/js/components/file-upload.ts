@@ -190,7 +190,8 @@ export interface FileUpload {
 }
 
 export default function createImageUpload(sourceInput: HTMLInputElement, api: BooruApi): FileUpload {
-    let foundMd5Match = false
+    let foundMd5Match: boolean | undefined
+    let foundSourceMatches: boolean | undefined
     let loadedUrl = ""
     let sourceInfo: SourceInfo | undefined
     let objectUrl = ""
@@ -366,9 +367,12 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         if (downloading) event.preventDefault()
     })
 
+    const checkStatusMessage = E("div", { class: "hidden" })
+    const startChecksButton = E("button", { class: "start-checks-button styled-button" })
+    startChecksButton.addEventListener("click", () => runChecks())
+
     // Create elements for MD5 check
     const noHashMatchesMessage = E("div", { class: "success hidden" }, "Found no MD5 hash matches ✔")
-    const hashCheckErrorMessage = E("div", { class: "failure hidden" })
     const hashMatchesContainer = E("div", { class: "hash-matches" })
     const hashMatchesWrapper = E("div", { class: "hash-matches-wrapper hidden" }, [
         E("div", { class: "failure" }, "Found post with identical MD5 hash:"),
@@ -376,26 +380,17 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     ])
 
     // Create elements for source check
-    const searchingBySourceMessage = E("div", { class: "hidden" }, "Searching by image source...")
     const sourceMatchesContainer = E("div", { class: "source-matches" })
     const sourceMatchesHeader = E("div")
     const sourceMatchesWrapper = E("div", { class: "source-matches-wrapper hidden" }, [
-        searchingBySourceMessage,
         sourceMatchesHeader,
         sourceMatchesContainer
     ])
 
     // Create elements for IQDB search
-    const startIqdbSearch = E("button", { class: "search-iqdb-button styled-button hidden" }, "Search IQDB")
-    startIqdbSearch.addEventListener("click", async (event) => {
-        if (!fileInput.files) return
-        performIqdbSearch(fileInput.files[0])
-    })
-    const searchingIqdbMessage = E("div", { class: "hidden" }, "Searching IQDB...")
-    const iqdbMatchesContainer = E("div", { class: "iqdb-matches" })
+    const iqdbMatchesContainer = E("div", { class: "iqdb-matches hidden" })
     const iqdbMatchesHeader = E("div")
     const iqdbMatchesWrapper = E("div", { class: "iqdb-matches-wrapper hidden" }, [
-        searchingIqdbMessage,
         iqdbMatchesHeader,
         iqdbMatchesContainer
     ])
@@ -404,11 +399,11 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     const imageChecksContainer = E("div", { class: "image-checks" }, [
         noApiInfoSetMessage,
         noHashMatchesMessage,
-        hashCheckErrorMessage,
         hashMatchesWrapper,
         sourceMatchesWrapper,
-        startIqdbSearch,
-        iqdbMatchesWrapper
+        iqdbMatchesWrapper,
+        checkStatusMessage,
+        startChecksButton,
     ])
     const imagePreviewSmall = E("img", { class: "medium preview" }) as HTMLImageElement
     const imagePreviewLarge = E("img", { class: "large preview" }) as HTMLImageElement
@@ -445,18 +440,25 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     }
 
     const performMd5Search = async (file: File): Promise<CheckResult | undefined> => {
+        foundMd5Match = undefined
         checkStartListeners.forEach(listener => listener(CheckType.md5hash))
+
+        // Compute MD5 hash
         const arrayBuffer = await file.arrayBuffer()
         const md5 = new Md5()
         md5.appendByteArray(new Uint8Array(arrayBuffer))
         const md5hash = md5.end()
+
+        // Perform search
+        checkStatusMessage.textContent = `Searching for MD5 hash...`
         const posts = await api.searchPosts(["md5:" + md5hash])
+        foundMd5Match = posts.length > 0
 
         // Display result of MD5 check
         noHashMatchesMessage.classList.toggle("hidden", posts.length > 0)
         hashMatchesWrapper.classList.toggle("hidden", posts.length === 0)
-        if (posts.length > 0) {
-            foundMd5Match = true
+        if (foundMd5Match) {
+            checkStatusMessage.classList.add("hidden")
             hashMatchesContainer.innerHTML = ""
             for (const post of posts) {
                 const href = api.getPostUrl(post.id)
@@ -471,15 +473,12 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
     const performSourceSearch = async (sourceInfo: SourceInfo): Promise<CheckResult | undefined> => {
         checkStartListeners.forEach(listener => listener(CheckType.source))
         sourceMatchesContainer.classList.add("hidden")
-        sourceMatchesHeader.classList.add("hidden")
-        sourceMatchesWrapper.classList.remove("hidden")
 
         const hostDisplayName = SourceHosts.getDisplayName(sourceInfo.host)
         const idString = `${hostDisplayName} ID ${sourceInfo.id}`
 
         // Perform search
-        searchingBySourceMessage.textContent = `Searching for posts with ${idString}...`
-        searchingBySourceMessage.classList.remove("hidden")
+        checkStatusMessage.textContent = `Searching for posts with ${idString}...`
         let posts: BooruPost[] = []
         let sourceQuery: string = ""
         const sourceQueries = SourceHosts.getSourceQueries(sourceInfo)
@@ -487,9 +486,10 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             posts = await api.searchPosts([`source:${sourceQuery}`])
             if (posts.length > 0) break
         }
-        searchingBySourceMessage.classList.add("hidden")
+        foundSourceMatches = posts.length > 0
 
         // Display search result
+        sourceMatchesWrapper.classList.remove("hidden")
         sourceMatchesHeader.classList.toggle("success", posts.length === 0)
         sourceMatchesHeader.classList.toggle("failure", posts.length > 0)
         sourceMatchesHeader.classList.remove("hidden")
@@ -504,6 +504,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             + `${posts.length} ${postInflection}</a> matching ${idString}`
         
         // List matching posts
+        checkStatusMessage.classList.add("hidden")
         sourceMatchesContainer.innerHTML = ""
         for (const post of posts) {
             const href = api.getPostUrl(post.id)
@@ -552,15 +553,10 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
 
     async function performIqdbSearch(file: File): Promise<CheckResult> {
         checkStartListeners.forEach(listener => listener(CheckType.iqdb))
-        startIqdbSearch.classList.add("hidden")
+        startChecksButton.classList.add("hidden")
         // Hide source matches to make space for IQDB matches
         sourceMatchesContainer.classList.add("hidden")
-
-        searchingIqdbMessage.textContent = `Performing reverse image search in IQDB...`
-        searchingIqdbMessage.classList.remove("hidden")
-        iqdbMatchesContainer.classList.add("hidden")
-        iqdbMatchesHeader.classList.add("hidden")
-        iqdbMatchesWrapper.classList.remove("hidden")
+        checkStatusMessage.textContent = `Performing reverse image search in IQDB...`
 
         // Shrink the image if it's too large for IQDB
         const maxSize = 8192 * 1024
@@ -591,17 +587,15 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             filename: file.name
         })
         if (fileUrl !== objectUrl) URL.revokeObjectURL(fileUrl)
-        searchingIqdbMessage.classList.add("hidden")
-        iqdbMatchesHeader.classList.remove("hidden")
 
         if (!searchResult.success) {
-            iqdbMatchesHeader.classList.add("failure")
-            iqdbMatchesHeader.textContent = searchResult.error
-            return onCheckResult({ error: searchResult.error })
+            return handleCheckError(searchResult.error, "Retry IQDB search")
         }
         const matches = searchResult.matches
 
         // Display search result
+        checkStatusMessage.classList.add("hidden")
+        iqdbMatchesWrapper.classList.remove("hidden")
         iqdbMatchesHeader.classList.toggle("success", matches.length === 0)
         iqdbMatchesHeader.classList.toggle("failure", matches.length > 0)
         if (matches.length === 0) {
@@ -633,14 +627,28 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         return emitStatusUpdate(postIds, posts)
     }
 
-    function hideChecks() {
-        noHashMatchesMessage.classList.add("hidden")
-        hashCheckErrorMessage.classList.add("hidden")
-        hashMatchesWrapper.classList.add("hidden")
-        sourceMatchesWrapper.classList.add("hidden")
+    function handleCheckError(error: string, retryMessage: string) {
+        checkStatusMessage.classList.add("failure")
+        checkStatusMessage.innerHTML = error
+        startChecksButton.classList.remove("hidden")
+        startChecksButton.innerHTML = retryMessage
+        return onCheckResult({ error })
+    }
+
+    function initChecksContainer() {
+        checkStatusMessage.classList.remove("failure")
+        checkStatusMessage.classList.remove("hidden")
+        startChecksButton.classList.add("hidden")
+        noApiInfoSetMessage.classList.add("hidden")
+
+        if (foundMd5Match === undefined) {
+            noHashMatchesMessage.classList.add("hidden")
+            hashMatchesWrapper.classList.add("hidden")
+        }
+        if (foundSourceMatches === undefined) {
+            sourceMatchesWrapper.classList.add("hidden")
+        }
         iqdbMatchesWrapper.classList.add("hidden")
-        startIqdbSearch.classList.add("hidden")
-        imageInfoContainer.classList.remove("hidden")
     }
 
     async function runChecks(file?: File): Promise<CheckResult> {
@@ -650,31 +658,36 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
             }
             file = fileInput.files[0]
         }
-        foundMd5Match = false
-        hideChecks()
+        initChecksContainer()
         if (api.isAuthenticated()) {
-            // Calculate MD5 and check if it already exists
             let result: CheckResult | undefined
-            try {
-                result = await performMd5Search(file)
-            } catch {
-                const error = "MD5 hash check failed."
-                hashCheckErrorMessage.classList.remove("hidden")
-                hashCheckErrorMessage.innerHTML = error
-                return onCheckResult({ error })
+
+            // Calculate MD5 and check if it already exists
+            if (foundMd5Match === undefined) {
+                try {
+                    result = await performMd5Search(file)
+                } catch {
+                    return handleCheckError("MD5 hash check failed.", "Retry hash check")
+                }
+
+                // MD5 hash check is sufficiently precise, no need to do more checks if a match has been found
+                // (false positives are theoretically possible but highly unlikely, so not worth handling)
+                if (result) return result
             }
 
-            // MD5 hash check is sufficiently precise, no need to do more checks if a match has been found
-            // (false positives are theoretically possible but highly unlikely, so not worth handling)
-            if (result) return result
-
             // Do a source check using the source ID if available
-            if (sourceInfo) {
-                result = await performSourceSearch(sourceInfo)
+            if (sourceInfo && foundSourceMatches === undefined) {
+                try {
+                    result = await performSourceSearch(sourceInfo)
+                } catch {
+                    return handleCheckError("Search by source ID failed.", "Retry source search")
+                }
                 if (result) {
                     // If source search found matches, IQDB search may not be necessary,
                     // so just display a button to let user manually start search if needed
-                    startIqdbSearch.classList.remove("hidden")
+                    startChecksButton.innerHTML = "Search IQDB"
+                    startChecksButton.classList.remove("hidden")
+                    checkStatusMessage.classList.add("hidden")
                     return result
                 }
             }
@@ -716,18 +729,16 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         }
 
         // If given filename uses the Pixiv pattern, extract and remember the ID
-        const pixivRegex = /(\d+)_p\d+/
+        const pixivRegex = /(\d+)(-[^_]+)?_p(\d+)/
         const pixivMatch = file.name.match(pixivRegex)
         sourceInfo = pixivMatch !== null ?
             { id: pixivMatch[1], host: SourceHost.Pixiv } : undefined
 
         uploadListeners.forEach(listener => listener(objectUrl))
-        if (!isVideo(file)) {
-            checkResult = runChecks(file)
-        } else {
-            checkResult = undefined
-            hideChecks()
-        }
+        foundMd5Match = undefined
+        foundSourceMatches = undefined
+        imageInfoContainer.classList.toggle("hidden", isVideo(file))
+        checkResult = !isVideo(file) ? runChecks(file) : undefined
     })
 
     const resetFunction = () => {
@@ -737,6 +748,8 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         if (objectUrl) URL.revokeObjectURL(objectUrl)
         objectUrl = ""
         checkResult = undefined
+        foundMd5Match = undefined
+        foundSourceMatches = undefined
         imageInfoContainer.classList.add("hidden")
         imagePreviewSmall.removeAttribute("src")
         imagePreviewLarge.removeAttribute("src")
@@ -760,7 +773,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         setFile,
         reset: resetFunction,
         runChecks: () => { checkResult = runChecks(); return checkResult },
-        foundMd5Match: () => foundMd5Match,
+        foundMd5Match: () => !!foundMd5Match,
         getLargeImagePreview: () => imagePreviewLarge,
         // getLargeImagePreview: () => fileInput.files && isVideo(fileInput.files[0]) ?
         //     videoPreviewLarge : imagePreviewLarge,

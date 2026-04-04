@@ -131,6 +131,8 @@ export default class UploadInterface extends Component {
         const file = this.fileUpload.getFile()
         return {
             ...this.getData(),
+            title: this.titleInput.value.trim(),
+            description: this.descriptionInput.getValue().trim(),
             file: file ? {
                 objectUrl: this.fileUpload.getObjectUrl(),
                 name: file.name,

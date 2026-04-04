@@ -110,13 +110,17 @@
 }
 
 .image-checks {
-  margin-top: 20px;
+  margin-top: 8px;
   margin-left: 20px;
   margin-bottom: 5px;
   margin-right: 0;
   font-size: 1.2rem;
   overflow-x: hidden;
   overflow-y: hidden;
+
+  & > * {
+    margin-top: 12px;
+  }
 }
 
 .hash-matches-wrapper {
@@ -126,10 +130,6 @@
 
 .hash-matches > a {
   margin-left: 12px;
-}
-
-.source-matches-wrapper, .iqdb-matches-wrapper{
-  margin-top: 12px;
 }
 
 .source-matches, .iqdb-matches {
@@ -162,8 +162,7 @@
   overflow: auto;
 }
 
-.search-iqdb-button {
-  margin-top: 11px;
+.start-checks-button {
   width: unset;
 }
 
