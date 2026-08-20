@@ -42,6 +42,8 @@ interface RawPost {
     score: number
     fav_count: number
     created_at: string
+    image_width: number
+    image_height: number
     // uploader_id: number
     // approver_id: number
     // rating: "g" | "s" | "q" | "e"
@@ -149,6 +151,14 @@ const tagTypeToNumber: { [key in TagType]: number } = {
     "character": 4,
     "metadata": 5,
     "deprecated": 6
+}
+
+interface DanbooruIqdbMatch {
+    hash: string
+    post_id: number
+    post: RawPost
+    score: number
+    signature: any  // Not sure what this is there for
 }
 
 enum IndexType {
@@ -380,13 +390,47 @@ export default class DanbooruApi implements BooruApi {
     }
 
     async searchIqdb(params: IqdbSearchParams): Promise<IqdbSearchResult> {
-        const result = await IQDB.search(params)
-        if (!result.success) return result
+        // Use public danbooru.iqdb.org domain if credentials are missing
+        if (!this.credentials) {
+            const result = await IQDB.search(params)
+            if (!result.success) return result
+            return {
+                success: true,
+                matches: result.matches.map(match => ({
+                    ...match,
+                    postId: parseInt(match.postUrl.split("/").slice(-1)[0])
+                }))
+            }
+        }
+        // Otherwise use Danbooru's API endpoint (faster and less error-prone)
+        const { username, apiKey } = this.credentials
+        const authParams = new URLSearchParams({
+            "login": username,
+            "api_key": apiKey
+        })
+        const formData = new FormData()
+        const data = await (await fetch(params.fileUrl)).blob()
+        formData.set("search[file]", data)
+        formData.set("search[similarity]", "80")
+        const [uploadResponse, uploadError] = await catchError(
+            () => fetch(origin + "/iqdb_queries.json?" + authParams.toString(), {
+                method: "POST",
+                body: formData
+            })
+        )
+        if (uploadError) {
+            return { success: false, error: uploadError.message }
+        }
+        const responseData = await uploadResponse.json() as DanbooruIqdbMatch[]
         return {
             success: true,
-            matches: result.matches.map(match => ({
-                ...match,
-                postId: parseInt(match.postUrl.split("/").slice(-1)[0])
+            matches: responseData.map(({ post, score }) => ({
+                postId: post.id,
+                postUrl: this.getPostUrl(post.id),
+                thumbnailUrl: post.preview_file_url,
+                width: post.image_width,
+                height: post.image_height,
+                similarity: score
             }))
         }
     }

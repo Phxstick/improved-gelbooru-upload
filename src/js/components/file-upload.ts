@@ -591,7 +591,7 @@ export default function createImageUpload(sourceInput: HTMLInputElement, api: Bo
         if (!searchResult.success) {
             return handleCheckError(searchResult.error, "Retry IQDB search")
         }
-        const matches = searchResult.matches
+        const matches = searchResult.matches.filter(match => match.similarity > 80)
 
         // Display search result
         checkStatusMessage.classList.add("hidden")

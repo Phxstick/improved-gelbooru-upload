@@ -179,7 +179,6 @@ export default class UploadInterface extends Component {
     }
 
     async insertEnhancedData(data: UploadInstanceData): Promise<CheckResult | undefined> {
-        this.insertData(data)
         if (data.tags) {
             this.tagInputs.insertGroupedTags(data.tags, true)
         }
@@ -199,6 +198,9 @@ export default class UploadInterface extends Component {
                 }
             }
         }
+        // NOTE: order is important, this must happen *after* setting the file or
+        // else source info will get overridden by file upload handler (if given)
+        this.insertData(data)
         if (data.sourceTags) {
             const sourceTags = data.sourceTags
             // Timeout is needed so that on-upload handler doesn't immediately clear tags again

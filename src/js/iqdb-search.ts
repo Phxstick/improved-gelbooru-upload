@@ -41,7 +41,6 @@ namespace IQDB {
         }
         try {
             const matches = parseIqdbSearchResults(doc, params.host)
-                            .filter(match => match.similarity > 80)
             return { success: true, matches }
         } catch (e) {
             return { success: false, error: "Failed to parse IQDB response." }
